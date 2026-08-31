@@ -101,7 +101,7 @@ def _copy_sejours(date_str: str) -> int:
                 "patient_pseudo": _pseudonymize(row["patient_id"]),
                 "service_code":   row["service_code"],
                 "admission_ts":   row["admission_ts"],
-                "discharge_ts":   row["discharge_ts"],   # vide si séjour en cours
+                "discharge_ts":   row["discharge_ts"],# vide si séjour en cuors
                 "admission_mode": row["admission_mode"],
                 "discharge_mode": row["discharge_mode"],
             })

@@ -46,7 +46,7 @@ services:
   #   Database: default
   #   User: default
   metabase:
-    image: metabase/metabase:v0.51.4
+    image: metabase/metabase:v0.53.4
     ports:
       - "3001:3000"
     volumes:

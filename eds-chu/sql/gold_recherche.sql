@@ -39,8 +39,6 @@ FROM silver.dim_patient;
 CREATE OR REPLACE VIEW gold_recherche.dim_pathologie AS
 SELECT * FROM silver.dim_pathologie;
 
-CREATE OR REPLACE VIEW gold_recherche.dim_temps AS
-SELECT * FROM silver.dim_temps;
 
 -- fact_diagnostic : projection sans stay_id (cloisonnement)
 -- et sans les colonnes de séjour (mode admission/sortie = données de pilotage).
