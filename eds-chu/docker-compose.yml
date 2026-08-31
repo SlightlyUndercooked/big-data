@@ -1,0 +1,65 @@
+services:
+
+  # ---------------------------------------------------------------
+  # ClickHouse — entrepôt colonne, moteur de toutes les transformations
+  # ---------------------------------------------------------------
+  # Port 8123 : interface HTTP (utilisée par clickhouse-connect Python et Metabase)
+  # Port 9000 : protocole natif (client CLI clickhouse-client)
+  # Interface SQL intégrée : http://localhost:8123/play
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.10
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}   # vide en dev local
+    ulimits:
+      # Requis par ClickHouse pour gérer de nombreux fichiers simultanément
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------
+  # Metabase — dashboards, cloisonnement des droits
+  # ---------------------------------------------------------------
+  # Accès : http://localhost:3000
+  #
+  # Pré-requis : télécharger le driver ClickHouse pour Metabase
+  # et le placer dans ./metabase-plugins/
+  #
+  # Driver officiel :
+  #   https://github.com/ClickHouse/metabase-clickhouse-driver/releases
+  #   → télécharger clickhouse.metabase-driver.jar (dernière version)
+  #   → le placer dans eds-chu/metabase-plugins/
+  #
+  # Connexion ClickHouse dans Metabase :
+  #   Host: clickhouse  (nom du service Docker, pas localhost)
+  #   Port: 8123
+  #   Database: default
+  #   User: default
+  metabase:
+    image: metabase/metabase:v0.51.4
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase-data
+      - ./metabase-plugins:/plugins
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_PLUGINS_DIR: /plugins
+      JAVA_TIMEZONE: Europe/Paris
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+volumes:
+  clickhouse_data:
+  metabase_data:
