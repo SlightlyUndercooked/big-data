@@ -70,8 +70,8 @@ def _record_run(ch, date_str: str, status: str, rows: int, error: str = "") -> N
             "bronze",
             date_str,
             status,
-            datetime.now(),         # started_at (approximation)
-            datetime.now(),         # finished_at
+            datetime.now(),# started_at
+            datetime.now(), # finished_at
             rows,
             error or None,
         ]],

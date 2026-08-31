@@ -18,25 +18,6 @@
 CREATE DATABASE IF NOT EXISTS silver;
 
 -- -----------------------------------------------------------------
--- Dimension TEMPS — calendrier généré, sans source externe
--- -----------------------------------------------------------------
--- Généré en SQL pur avec la fonction numbers() de ClickHouse.
--- 10 ans de dates (2020–2030) couvrent les données actuelles et futures.
--- Partagée entre gold_pilotage et gold_recherche (aucune donnée sensible).
-CREATE OR REPLACE TABLE silver.dim_temps
-ENGINE = MergeTree()
-ORDER BY date_id
-AS SELECT
-    toDate('2020-01-01') + toUInt32(number)         AS date_id,
-    toYear(toDate('2020-01-01')  + toUInt32(number)) AS annee,
-    toMonth(toDate('2020-01-01') + toUInt32(number)) AS mois,
-    toISOWeek(toDate('2020-01-01') + toUInt32(number)) AS semaine,
-    toDayOfWeek(toDate('2020-01-01') + toUInt32(number)) AS jour_semaine_num,
-    ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche']
-        [toDayOfWeek(toDate('2020-01-01') + toUInt32(number))] AS jour_semaine
-FROM numbers(3650);
-
--- -----------------------------------------------------------------
 -- Dimension SERVICE
 -- -----------------------------------------------------------------
 -- FINAL force la déduplication ReplacingMergeTree immédiatement,

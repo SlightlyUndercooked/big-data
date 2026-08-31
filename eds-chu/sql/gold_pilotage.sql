@@ -29,8 +29,6 @@ FROM silver.dim_patient;
 CREATE OR REPLACE VIEW gold_pilotage.dim_service AS
 SELECT * FROM silver.dim_service;
 
-CREATE OR REPLACE VIEW gold_pilotage.dim_temps AS
-SELECT * FROM silver.dim_temps;
 
 -- fact_sejour enrichie de region_code (dénormalisé depuis dim_patient Silver).
 -- region_code reste disponible pour le pilotage (analyse des flux géographiques,
