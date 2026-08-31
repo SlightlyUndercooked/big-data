@@ -16,13 +16,65 @@ On ne choisit pas le flocon (snowflake) car les dimensions sont simples et peu v
 
 ---
 
+## Dimension patient unifiée
+
+Les deux schémas Gold (pilotage et recherche) partagent la **même définition de `dim_patient`** :
+
+| Colonne | Type | Description |
+|---|---|---|
+| `patient_pseudo` | String | HMAC-SHA256(patient_id, sel_secret) — clé pseudonymisée |
+| `birth_year` | Int | Année de naissance (date complète supprimée — quasi-identifiant RGPD) |
+| `sex` | String | M / F normalisé en Silver |
+
+`region_code` n'est **pas** dans `dim_patient`. Elle est dénormalisée dans `fact_sejour` (côté pilotage uniquement, là où elle est utile), conformément au principe de minimisation RGPD. Un chercheur n'y a structurellement pas accès.
+
+> `nom`, `prenom`, `nir`, `birth_date` complète ne sont **jamais** présents dans l'entrepôt. Ils sont supprimés dès la copie vers le lake, avant toute insertion en Bronze.
+
+---
+
 ## Schéma 1 — Pilotage hospitalier
 
-> **Grain de la table de faits : un séjour hospitalier**
+> **Grain de la table de faits principale : un séjour hospitalier**
 
 ![Schéma Séjour](./images/star_schema_sejour.png)
+```
+                        ┌─────────────────────┐
+                        │   dim_service        │
+                        │─────────────────────│
+                        │ service_code (PK)    │
+                        │ libelle              │
+                        └──────────┬──────────┘
+                                   │
+          ┌──────────────────────────────────────────┐
+          │                                          │
+┌─────────┴──────────┐           ┌───────────────────▼─────────────────┐
+│   dim_patient       │           │   fact_sejour                        │
+│────────────────────│           │─────────────────────────────────────│
+│ patient_pseudo (PK) │◄──────────┤ sejour_id (PK)                      │
+│ birth_year          │           │ patient_pseudo (FK)                  │
+│ sex                 │           │ service_code (FK → dim_service)      │
+└─────────────────────┘           │ date_admission    (Date)             │
+                                  │ date_sortie       (Date, nullable)   │
+                                  │ region_code                          │
+                                  │ admission_mode                       │
+                                  │ discharge_mode                       │
+                                  │ duree_sejour_jours                   │
+                                  │ is_readmission_30j                   │
+                                  │ nb_alertes_monitoring                │
+                                  └─────────────────────────────────────┘
 
-### Pourquoi ce grain ?
+                      fact_monitoring (sans dimension)
+                      ─────────────────────────────────
+                      stay_id
+                      ts
+                      date_mesure
+                      heart_rate
+                      spo2
+                      temp_c
+                      is_alerte
+```
+
+### Pourquoi ce grain pour fact_sejour ?
 
 Le grain « un séjour » est le plus naturel pour le pilotage hospitalier : toutes les questions métier s'expriment à ce niveau (DMS *par séjour*, taux de réadmission = ratio de *séjours* suivant une sortie récente, activité urgences = nombre de *séjours* en urgence par jour). Un grain plus fin (journée de séjour, acte) rendrait les agrégations plus complexes sans valeur ajoutée pour ce tableau de bord. Un grain plus large (patient) effacerait la notion de passage, pourtant centrale en hôpital.
 
@@ -33,45 +85,39 @@ Le grain « un séjour » est le plus naturel pour le pilotage hospitalier : tou
 | Colonne | Type | Description | Justification |
 |---|---|---|---|
 | `sejour_id` | String | Clé naturelle du séjour | Fourni par la source, stable, utilisé comme identifiant de jointure avec diagnostics |
-| `patient_pseudo` | String | FK → dim_patient_pilot | Pseudonyme HMAC déterministe — permet de compter les réadmissions sans exposer l'identité |
-| `service_code` | String | FK → dim_service | Code pivot vers le libellé et le pôle |
+| `patient_pseudo` | String | FK → dim_patient | Pseudonyme HMAC déterministe — permet de compter les réadmissions sans exposer l'identité |
+| `service_code` | String | FK → dim_service | Code pivot vers le libellé |
 | `date_admission` | Date | FK → dim_temps | Tronqué à la date (sans heure) pour la jointure avec dim_temps ; l'horodatage complet est en Silver |
 | `date_sortie` | Date | FK → dim_temps, NULL si séjour en cours | NULL est légitime (patient encore hospitalisé), pas une anomalie |
-| `admission_mode` | String | urgence / programme / mutation | Dénormalisé dans la fact car c'est une mesure de contexte du séjour, pas une dimension stable à part entière — les valeurs sont peu nombreuses et ne changent pas |
+| `region_code` | String | Département de résidence du patient | Dénormalisé ici plutôt que dans dim_patient : un chercheur ne doit pas voir cette colonne. La mettre dans la fact du pilotage garantit un cloisonnement structurel |
+| `admission_mode` | String | urgence / programme / mutation | Dénormalisé dans la fact — valeurs peu nombreuses, stables, pas une dimension à part entière |
 | `discharge_mode` | String | domicile / mutation / transfert / deces / NULL | Idem |
-| `duree_sejour_jours` | Float | Calculé en Silver : `discharge_ts - admission_ts` | Pré-calculé pour éviter de refaire le calcul à chaque requête dashboard ; Float pour capturer les fractions de journée |
-| `is_readmission_30j` | Bool | Vrai si le patient a eu une sortie dans les 30j précédant cette admission | Indicateur qualité clé (sujet mentionne "taux de réadmission à 30j") ; calculé en Silver par fenêtre glissante sur `patient_pseudo` |
-| `nb_alertes_monitoring` | Int | Nb de relevés monitoring hors plage physiologique sur ce séjour | Le monitoring est volumineux (flux continu) ; l'agréger ici évite d'exposer une table de plusieurs millions de lignes dans Gold. Le détail reste disponible en Silver si besoin d'analyse fine |
+| `duree_sejour_jours` | Float | Calculé en Silver : `discharge_ts - admission_ts` | Pré-calculé pour éviter le recalcul à chaque requête dashboard |
+| `is_readmission_30j` | Bool | Vrai si sortie récente dans les 30j avant cette admission | Calculé en Silver par fenêtre glissante (`lagInFrame`) sur `patient_pseudo` |
+| `nb_alertes_monitoring` | Int | Nb de relevés hors plage physiologique sur ce séjour | Agrégé pour éviter d'exposer le flux brut (millions de lignes) dans Gold |
 
-#### `dim_patient_pilot`
+#### `fact_monitoring`
 
-| Colonne | Type | Description | Justification |
-|---|---|---|---|
-| `patient_pseudo` | String | HMAC-SHA256(patient_id, sel_secret) | Déterministe : le même patient aura toujours le même pseudonyme, ce qui préserve les jointures inter-séjours. Non réversible : on ne peut pas retrouver le patient_id d'origine sans le sel, qui ne vit pas dans l'entrepôt |
-| `birth_year` | Int | Année de naissance uniquement | RGPD art. 9 : la date complète est un quasi-identifiant. L'année seule suffit pour calculer une tranche d'âge ou une tendance démographique ; la précision supplémentaire du mois/jour n'apporte rien au pilotage |
-| `sex` | String | M / F normalisé | Utile pour croiser l'activité par sexe ; normalisé en Silver (les sources peuvent avoir M/F, Masculin/Féminin, 1/2...) |
-| `region_code` | String | Département de résidence | Utile côté pilotage pour visualiser la zone de chalandise du CHU ou comparer les flux par provenance géographique |
+Table de faits **sans dimension** — elle expose le flux brut de constantes vitales, ligne par ligne.
 
-> `nom`, `prenom`, `nir`, `birth_date` complète ne sont **jamais** présents dans l'entrepôt. Ils sont supprimés dès la copie vers le lake, avant toute insertion en Bronze.
+| Colonne | Type | Description |
+|---|---|---|
+| `stay_id` | String | Identifiant du séjour (clé de jointure vers fact_sejour si besoin) |
+| `ts` | DateTime | Horodatage de la mesure |
+| `date_mesure` | Date | Date extraite de ts (pour filtrer par jour) |
+| `heart_rate` | Float | Fréquence cardiaque (bpm) |
+| `spo2` | Float | Saturation en oxygène (%) |
+| `temp_c` | Float | Température corporelle (°C) |
+| `is_alerte` | UInt8 | 1 si au moins une constante sort de la plage physiologique normale |
+
+> Pourquoi sans dimension ? Le monitoring est un flux continu — des millions de lignes sur quelques jours. Les dimensions temporelles (date, heure) s'extraient directement des colonnes `ts` / `date_mesure` via des fonctions ClickHouse, sans table de jointure. La jointure vers `fact_sejour` se fait via `stay_id` si une analyse croisée est nécessaire. Créer une dimension `dim_constantes` n'aurait pas de sens : il n'y a rien à enrichir — les noms de capteurs sont fixes et peu nombreux.
 
 #### `dim_service`
 
-| Colonne | Type | Justification |
-|---|---|---|
-| `service_code` | String | Clé de jointure avec fact_sejour |
-| `libelle` | String | Indispensable pour des dashboards lisibles (un code seul n'a pas de sens pour un opérationnel) |
-| `pole` | String | Permet d'agréger plusieurs services en unité de gestion (pôle médical). Pas dans les données source actuelles mais courant dans les référentiels hospitaliers réels ; à alimenter si le CHU fournit cette info |
-
-#### `dim_temps`
-
-La dimension temps est construite artificiellement (génération d'un calendrier), pas extraite d'une source. Elle permet de filtrer ou grouper sur n'importe quelle granularité temporelle sans recalcul à chaque requête.
-
 | Colonne | Justification |
 |---|---|
-| `annee` | Agrégation annuelle (tendances) |
-| `mois` | Saisonnalité, comparaisons mois sur mois |
-| `semaine` | Pilotage opérationnel à la semaine |
-| `jour_semaine` | Activité urgences : différencier lundi d'un dimanche |
+| `service_code` | Clé de jointure avec fact_sejour |
+| `libelle` | Indispensable pour des dashboards lisibles (un code seul n'a pas de sens pour un opérationnel) |
 
 ---
 
@@ -80,10 +126,34 @@ La dimension temps est construite artificiellement (génération d'un calendrier
 > **Grain de la table de faits : une occurrence de diagnostic sur un séjour**
 
 ![Schema Diagnostic](./images/star_schema_diagnostic.png)
+```
+                        ┌─────────────────────┐
+                        │   dim_pathologie     │
+                        │─────────────────────│
+                        │ code_cim10 (PK)      │
+                        │ libelle              │
+                        │ chapitre             │
+                        └──────────┬──────────┘
+                                   │
+          ┌──────────────────────────────────────────┐
+          │                                          │
+┌─────────┴──────────┐           ┌───────────────────▼─────────────────┐
+│   dim_patient       │           │   fact_diagnostic                    │
+│────────────────────│           │─────────────────────────────────────│
+│ patient_pseudo (PK) │◄──────────┤ diagnostic_id (PK)                  │
+│ birth_year          │           │ patient_pseudo (FK)                  │
+│ sex                 │           │ code_cim10 (FK → dim_pathologie)     │
+└─────────────────────┘           │ date_admission    (Date)             │
+                                  │ type_diag                            │
+                                  │ service_code                         │
+                                  └─────────────────────────────────────┘
+```
+
+> `sejour_id` est absent de `fact_diagnostic` côté recherche : un chercheur ne doit pas pouvoir remonter au séjour de pilotage via une jointure. Le cloisonnement est structurel, pas uniquement déclaratif.
 
 ### Pourquoi ce grain ?
 
-Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés). Si le grain était le séjour, on devrait stocker les codes CIM10 dans un tableau, ce qui empêche le filtre et l'agrégation par pathologie en SQL standard. En choisissant le grain « une ligne par diagnostic », on peut répondre directement à "combien de patients ont un code I25 (cardiopathie ischémique) ?" avec un simple `WHERE code_cim10 = 'I25'`, sans dépiler un tableau. C'est le grain naturel pour la recherche clinique.
+Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés). Si le grain était le séjour, on devrait stocker les codes CIM10 dans un tableau, ce qui empêche le filtre et l'agrégation par pathologie en SQL standard. En choisissant le grain « une ligne par diagnostic », on répond directement à "combien de patients ont un code I25 ?" avec un simple `WHERE code_cim10 = 'I25'`. C'est le grain naturel pour la recherche clinique.
 
 ### Détail des tables
 
@@ -91,24 +161,16 @@ Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés)
 
 | Colonne | Type | Description | Justification |
 |---|---|---|---|
-| `diagnostic_id` | String | Concaténation `sejour_id\|\|'_'\|\|code_cim10` | Clé surrogate stable et reproductible ; pas de séquence auto-incrémentée car le pipeline est incrémental et distribué |
-| `patient_pseudo` | String | FK → dim_patient_search | Même pseudonyme que côté pilotage — le sel est identique, donc le même patient_id produit le même hash dans les deux schémas. Cela permet une jointure autorisée entre les deux univers si un administrateur le décide, sans réidentification |
+| `diagnostic_id` | String | Concaténation `sejour_id\|\|'_'\|\|code_cim10` | Clé surrogate stable et reproductible |
+| `patient_pseudo` | String | FK → dim_patient | Même pseudonyme que côté pilotage — le sel est identique, le même patient_id produit le même hash dans les deux schémas |
 | `code_cim10` | String | FK → dim_pathologie | Pivot vers le libellé et la hiérarchie CIM-10 |
-| `sejour_id` | String | Référence au séjour, **pas de FK formelle** | On ne crée pas de FK vers `fact_sejour` pour garder les deux schémas Gold indépendants (cloisonnement des droits). Un chercheur ne doit pas pouvoir naviguer vers les données de pilotage via une jointure. Si besoin d'un drill-through, il passe par une vue contrôlée |
-| `date_admission` | Date | FK → dim_temps | Date d'entrée du séjour correspondant — permet de situer le diagnostic dans le temps sans dupliquer toute la table séjour |
-| `type_diag` | String | principal / associe | Crucial pour la recherche : la prévalence d'une maladie se mesure sur les diagnostics **principaux** uniquement. Les associés représentent les comorbidités |
-| `service_code` | String | Service lors du diagnostic | Dénormalisé (pas de FK vers dim_service) pour éviter une dépendance entre les schémas Gold. Permet quand même de filtrer par spécialité médicale côté recherche |
+| `date_admission` | Date | FK → dim_temps | Date d'entrée du séjour — situe le diagnostic dans le temps |
+| `type_diag` | String | principal / associe | Crucial : la prévalence se mesure sur les diagnostics principaux uniquement |
+| `service_code` | String | Service lors du diagnostic | Dénormalisé pour éviter une dépendance entre les schémas Gold |
 
-#### `dim_patient_search`
+#### `dim_patient` (partagée)
 
-| Colonne | Type | Justification |
-|---|---|---|
-| `patient_pseudo` | String | Même logique que côté pilotage |
-| `birth_year` | Int | Idem |
-| `sex` | String | Idem |
-| `age_admission` | Int | **Différence clé avec dim_patient_pilot** : l'âge au moment du séjour est la variable démographique fondamentale en recherche clinique (distribution d'âge d'une cohorte). On le calcule en Silver : `YEAR(admission_ts) - birth_year`. Il est stocké dans la dimension car il varie d'un séjour à l'autre pour le même patient |
-
-> **Pourquoi pas `region_code` ici ?** Principe de minimisation RGPD : on ne conserve que ce qui est utile à l'usage. La région de résidence n'est pas pertinente pour décrire une cohorte de patients par pathologie. La conserver augmenterait le risque de ré-identification (croisement âge + sexe + région + maladie rare).
+Identique au schéma pilotage — `patient_pseudo`, `birth_year`, `sex`. Pas de `region_code` (minimisation RGPD côté recherche).
 
 #### `dim_pathologie`
 
@@ -116,30 +178,9 @@ Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés)
 |---|---|
 | `code_cim10` | Code source brut fourni dans diagnostics.json |
 | `libelle` | Texte lisible pour les dashboards chercheurs |
-| `chapitre` | Niveau hiérarchique haut de la CIM-10 (ex : "Chapitre IX — Maladies de l'appareil circulatoire"). Permet de filtrer ou agréger par grande catégorie médicale sans connaître tous les codes |
-| `groupe` | Sous-groupe intermédiaire (ex : "Cardiopathies ischémiques"). Utile pour des analyses à mi-chemin entre le code précis et le chapitre entier |
+| `chapitre` | Niveau hiérarchique haut de la CIM-10. Permet de filtrer par grande catégorie médicale sans connaître tous les codes |
 
-La hiérarchie chapitre/groupe est dénormalisée dans `dim_pathologie` (et non dans deux tables séparées) : c'est un choix de lisibilité assumé. Le référentiel CIM-10 est stable, son volume est petit (~10 000 codes), et la dénormalisation ne pose pas de problème de cohérence.
-
----
-
-## Deux `dim_patient` séparées : pourquoi ?
-
-C'est le choix de conception le plus important du modèle. On aurait pu faire une seule table `dim_patient` avec toutes les colonnes, partagée entre les deux schémas. On ne le fait pas pour deux raisons :
-
-1. **Cloisonnement des droits** : si la table est partagée, un utilisateur du schéma recherche pourrait en théorie accéder à `region_code`, qui n'est pas supposé lui être visible. En dupliquant la dimension avec des colonnes différentes, le cloisonnement est structurel — il ne repose pas uniquement sur une règle Metabase qui pourrait être contournée.
-
-2. **Minimisation RGPD** : chaque usage ne voit que les attributs dont il a besoin. Le pilotage a besoin de la région (flux géographiques) mais pas de l'âge précis à l'admission. La recherche a besoin de l'âge à l'admission mais pas de la région.
-
----
-
-## Traitement du monitoring : pourquoi pas une table de faits dédiée ?
-
-Le fichier `monitoring.parquet` est un flux continu de constantes (fréquence cardiaque, SpO2, température) mesuré régulièrement au chevet de chaque patient. Sur plusieurs jours de données, cela représente potentiellement des millions de lignes.
-
-Exposer cette table brute dans Gold n'aurait pas de sens : un opérationnel ne peut pas analyser des millions de relevés individuels dans un dashboard. Ce qui l'intéresse, c'est **combien de fois les constantes sont sorties de la plage normale** pendant un séjour.
-
-On agrège donc en Silver : `COUNT(*) WHERE hors_plage_physiologique GROUP BY stay_id` → une valeur entière `nb_alertes_monitoring` qui remonte dans `fact_sejour`. Le détail complet reste accessible en Silver pour des analyses ponctuelles (ex : visualiser l'évolution de la FC d'un patient sur un séjour).
+La hiérarchie est dénormalisée dans `dim_pathologie` (pas de tables séparées) : le référentiel CIM-10 est stable, son volume est petit (~10 000 codes), et la dénormalisation ne pose pas de problème de cohérence.
 
 ---
 
@@ -155,26 +196,25 @@ Implémentation : `HAVING COUNT(DISTINCT patient_pseudo) >= 5` sur toutes les re
 
 | Schéma Gold | Groupe Metabase | Tables visibles |
 |---|---|---|
-| `gold_pilotage` | `operationnels` | fact_sejour, dim_patient_pilot, dim_service, dim_temps |
-| `gold_recherche` | `chercheurs` | fact_diagnostic, dim_patient_search, dim_pathologie, dim_temps |
+| `gold_pilotage` | `operationnels` | fact_sejour, fact_monitoring, dim_patient, dim_service |
+| `gold_recherche` | `chercheurs` | fact_diagnostic, dim_patient, dim_pathologie |
 
-`dim_temps` est la seule table partagée — elle ne contient aucune donnée personnelle (c'est un calendrier).
+`dim_patient` est définie dans les deux bases avec le même contenu — elle ne contient aucune donnée permettant un croisement non autorisé.
 
 ---
 
 ## Vue d'ensemble des flux source → Gold
 
 ```
-patients.csv       ──[pseudonymisation + suppression PII]──► dim_patient_pilot
-                                                              dim_patient_search
+patients.csv       ──[pseudonymisation + suppression PII]──► dim_patient (pilotage + recherche)
 
 sejours.csv        ──[contrôles qualité Silver]─────────────► fact_sejour
+                                                               (region_code dénormalisée ici)
 
 diagnostics.json   ──[dépliage JSON, 1 ligne/code]──────────► fact_diagnostic
 
 monitoring.parquet ──[agrégation : COUNT hors plage]─────────► fact_sejour.nb_alertes_monitoring
-                       (détail conservé en Silver)
+                   ──[flux brut ligne par ligne]──────────────► fact_monitoring (sans dimension)
 
-referentiels/      ──[chargement direct]─────────────────────► dim_service
-                                                               dim_pathologie
+referentiels/      ──[chargement direct]─────────────────────► dim_service, dim_pathologie
 ```
