@@ -29,12 +29,16 @@ def _sql_path() -> Path:
 
 
 def _exec_sql_file(ch, path: Path) -> None:
-    """Exécute un fichier SQL statement par statement (séparateur : ';')."""
+    """Exécute un fichier SQL statement par statement (séparateur : ';').
+    Supprime les commentaires AVANT le split : un ';' dans un commentaire
+    ne doit pas être interprété comme séparateur d'instruction.
+    """
     sql = path.read_text()
-    for stmt in sql.split(";"):
-        stmt = stmt.strip()
-        lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
-        clean = "\n".join(lines).strip()
+    no_comments = "\n".join(
+        l for l in sql.splitlines() if not l.strip().startswith("--")
+    )
+    for stmt in no_comments.split(";"):
+        clean = stmt.strip()
         if clean:
             ch.command(clean)
 

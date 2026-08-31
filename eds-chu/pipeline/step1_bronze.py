@@ -31,13 +31,17 @@ def _sql_path(filename: str) -> Path:
 
 
 def _exec_sql_file(ch, filename: str) -> None:
-    """Lit un fichier .sql et exécute chaque instruction séparée par ';'."""
+    """Lit un fichier .sql et exécute chaque instruction séparée par ';'.
+    Les commentaires sont supprimés AVANT le split pour éviter qu'un ';'
+    dans un commentaire (ex: 'region_code ; il est...') soit coupé comme
+    séparateur d'instruction.
+    """
     sql = _sql_path(filename).read_text()
-    for stmt in sql.split(";"):
-        stmt = stmt.strip()
-        # Sauter les blocs vides ou purement commentaires
-        lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
-        clean = "\n".join(lines).strip()
+    no_comments = "\n".join(
+        l for l in sql.splitlines() if not l.strip().startswith("--")
+    )
+    for stmt in no_comments.split(";"):
+        clean = stmt.strip()
         if clean:
             ch.command(clean)
 
