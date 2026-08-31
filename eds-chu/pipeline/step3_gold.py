@@ -34,10 +34,11 @@ def _sql_path(name: str) -> Path:
 
 def _exec_sql_file(ch, path: Path) -> None:
     sql = path.read_text()
-    for stmt in sql.split(";"):
-        stmt = stmt.strip()
-        lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
-        clean = "\n".join(lines).strip()
+    no_comments = "\n".join(
+        l for l in sql.splitlines() if not l.strip().startswith("--")
+    )
+    for stmt in no_comments.split(";"):
+        clean = stmt.strip()
         if clean:
             ch.command(clean)
 

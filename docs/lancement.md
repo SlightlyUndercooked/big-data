@@ -35,7 +35,7 @@ CLICKHOUSE_USER=default
 CLICKHOUSE_PASSWORD=
 ```
 
-> **Important :** le `PIPELINE_SALT` génère tous les pseudonymes patients. Le changer invalide toutes les jointures existantes. Le fixer une bonne fois pour toutes.
+> **Important :** le `PIPELINE_SALT` génère tous les pseudonymes patients. Le changer invalide toutes les jointures existantes.
 
 ### 3. Télécharger le driver ClickHouse pour Metabase
 

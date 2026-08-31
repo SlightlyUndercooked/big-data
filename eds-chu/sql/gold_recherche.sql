@@ -25,16 +25,15 @@
 
 CREATE DATABASE IF NOT EXISTS gold_recherche;
 
--- Projection de dim_patient pour la recherche
--- SANS region_code : principe de minimisation (non utile à l'usage clinique)
--- Le même patient_pseudo que dans gold_pilotage — mais le chercheur
--- ne peut pas faire la jointure car il n'a pas accès à gold_pilotage.
+-- dim_patient unifiée — même définition que gold_pilotage (fusion des deux dims).
+-- patient_pseudo, birth_year, sex : le dénominateur commun aux deux usages.
+-- region_code absent des deux : il vit dans gold_pilotage.fact_sejour uniquement
+-- (minimisation RGPD côté recherche, et cohérence de la dim partagée).
 CREATE OR REPLACE VIEW gold_recherche.dim_patient AS
 SELECT
     patient_pseudo,
     birth_year,
     sex
-    -- region_code intentionnellement absent
 FROM silver.dim_patient;
 
 CREATE OR REPLACE VIEW gold_recherche.dim_pathologie AS

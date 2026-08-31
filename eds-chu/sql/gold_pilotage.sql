@@ -5,31 +5,25 @@
 -- Audience : opérationnels (direction, cadres de santé, administratifs)
 -- Accès    : groupe Metabase "operationnels" uniquement
 --
--- Implémentation : des VIEWS sur les tables Silver.
--- Avantage vs tables : aucune duplication, toujours à jour dès que
--- Silver est reconstruit. Les vues sont légères à re-créer.
---
--- Contenu exposé :
---   - Données de fonctionnement hospitalier (séjours, services, temps)
---   - Constantes agrégées (alertes par jour, pas le détail individuel)
---   - region_code inclus (analyse des flux géographiques — utile au pilotage)
---
--- NON exposé (cloisonnement) :
---   - Diagnostics CIM-10 (données cliniques → réservées à la recherche)
---   - Détail du monitoring par relevé (trop granulaire, agrégé dans fact_sejour)
+-- dim_patient est IDENTIQUE à gold_recherche (fusion des deux dims) :
+--   patient_pseudo, birth_year, sex
+--   → region_code n'est PAS dans la dim patient ; il est dénormalisé
+--     dans fact_sejour via un LEFT JOIN. Raison : region_code est un
+--     attribut du séjour (adresse au moment de l'admission, potentiellement
+--     changeante) plus qu'un attribut stable du patient. Ce choix permet
+--     aussi de partager une dim_patient commune avec gold_recherche.
 -- ===================================================================
 
 CREATE DATABASE IF NOT EXISTS gold_pilotage;
 
--- Projection de dim_patient pour le pilotage
--- region_code présent : utile pour analyser la zone de chalandise du CHU.
--- Pas d'age_admission : l'âge précis n'est pas nécessaire au pilotage opérationnel.
+-- dim_patient unifiée — même définition que gold_recherche
+-- birth_year et sex suffisent pour les analyses démographiques du pilotage.
+-- region_code est disponible dans fact_sejour (cf. ci-dessous).
 CREATE OR REPLACE VIEW gold_pilotage.dim_patient AS
 SELECT
     patient_pseudo,
     birth_year,
-    sex,
-    region_code
+    sex
 FROM silver.dim_patient;
 
 CREATE OR REPLACE VIEW gold_pilotage.dim_service AS
@@ -38,20 +32,34 @@ SELECT * FROM silver.dim_service;
 CREATE OR REPLACE VIEW gold_pilotage.dim_temps AS
 SELECT * FROM silver.dim_temps;
 
--- Vue principale : tous les faits séjours avec indicateurs calculés
+-- fact_sejour enrichie de region_code (dénormalisé depuis dim_patient Silver).
+-- region_code reste disponible pour le pilotage (analyse des flux géographiques,
+-- zone de chalandise) sans être dans la dim_patient partagée.
 CREATE OR REPLACE VIEW gold_pilotage.fact_sejour AS
-SELECT * FROM silver.fact_sejour;
+SELECT
+    f.stay_id,
+    f.patient_pseudo,
+    f.service_code,
+    f.date_admission,
+    f.date_sortie,
+    f.admission_mode,
+    f.discharge_mode,
+    f.duree_sejour_jours,
+    f.is_readmission_30j,
+    f.nb_alertes_monitoring,
+    p.region_code
+FROM silver.fact_sejour f
+LEFT JOIN silver.dim_patient p USING (patient_pseudo);
+
+-- fact_monitoring : relevés bruts avec flag alerte, sans jointure de dimensions.
+-- Permet à Metabase de construire n'importe quelle agrégation temporelle
+-- (par jour, par heure, par séjour) directement sur la fact.
+CREATE OR REPLACE VIEW gold_pilotage.fact_monitoring AS
+SELECT * FROM silver.fact_monitoring;
 
 -- -----------------------------------------------------------------
 -- KPI 1 : Durée Moyenne de Séjour (DMS) par service
 -- -----------------------------------------------------------------
--- Indicateur clé de performance hospitalière. Permet de :
---   - Comparer les services entre eux
---   - Détecter les services avec une DMS anormalement haute
---   - Suivre l'évolution dans le temps
---
--- ON EXCLUT les séjours en cours (date_sortie IS NULL) car leur durée
--- est inconnue et biaise la moyenne vers le bas (durée partielle).
 CREATE OR REPLACE VIEW gold_pilotage.v_dms_par_service AS
 SELECT
     f.service_code,
@@ -68,9 +76,6 @@ ORDER BY dms_jours DESC;
 -- -----------------------------------------------------------------
 -- KPI 2 : Activité des urgences — passages par jour
 -- -----------------------------------------------------------------
--- Filtre admission_mode = 'urgence' pour isoler les passages aux urgences.
--- Les mutations depuis un autre service ne sont pas comptées comme
--- des passages urgences (c'est une admission planifiée différée).
 CREATE OR REPLACE VIEW gold_pilotage.v_activite_urgences AS
 SELECT
     date_admission                       AS jour,
@@ -85,10 +90,6 @@ ORDER BY jour;
 -- -----------------------------------------------------------------
 -- KPI 3 : Taux de réadmission à 30 jours
 -- -----------------------------------------------------------------
--- Indicateur de qualité des soins : une réadmission précoce peut signaler
--- une sortie prématurée ou un suivi ambulatoire insuffisant.
--- La base est constituée des séjours TERMINÉS (date_sortie NOT NULL).
--- Les séjours en cours ne peuvent pas encore être "réadmis" post-sortie.
 CREATE OR REPLACE VIEW gold_pilotage.v_taux_readmission_30j AS
 SELECT
     toStartOfMonth(date_admission)    AS mois,
@@ -105,28 +106,14 @@ ORDER BY mois;
 -- -----------------------------------------------------------------
 -- KPI 4 : Surveillance des constantes — alertes par jour
 -- -----------------------------------------------------------------
--- Vue directe sur bronze.monitoring pour garder la granularité temporelle.
--- On peut voir l'évolution des alertes heure par heure si nécessaire
--- (Metabase peut grouper par heure ou par jour).
---
--- Plages physiologiques (sujet §3) :
---   FC : 20–250 bpm | SpO2 : 50–100 % | Temp : 30–45 °C
+-- Construit sur silver.fact_monitoring (la fact propre) plutôt que
+-- sur bronze.monitoring directement.
 CREATE OR REPLACE VIEW gold_pilotage.v_alertes_monitoring_par_jour AS
 SELECT
-    toDate(ts)  AS jour,
-    count()     AS nb_mesures_total,
-    countIf(
-        heart_rate NOT BETWEEN 20 AND 250
-        OR spo2    NOT BETWEEN 50 AND 100
-        OR temp_c  NOT BETWEEN 30.0 AND 45.0
-    )           AS nb_alertes,
-    round(
-        100.0 * countIf(
-            heart_rate NOT BETWEEN 20 AND 250
-            OR spo2    NOT BETWEEN 50 AND 100
-            OR temp_c  NOT BETWEEN 30.0 AND 45.0
-        ) / count(),
-    1)          AS pct_alertes
-FROM bronze.monitoring
+    date_mesure                    AS jour,
+    count()                        AS nb_mesures_total,
+    sum(is_alerte)                 AS nb_alertes,
+    round(100.0 * sum(is_alerte) / count(), 1) AS pct_alertes
+FROM silver.fact_monitoring
 GROUP BY jour
 ORDER BY jour

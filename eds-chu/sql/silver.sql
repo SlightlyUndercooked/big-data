@@ -266,4 +266,33 @@ AS SELECT
     d.type_diag,
     s.service_code
 FROM bronze.diagnostics d
-INNER JOIN silver.sejours_clean s ON d.stay_id = s.stay_id
+INNER JOIN silver.sejours_clean s ON d.stay_id = s.stay_id;
+
+-- -----------------------------------------------------------------
+-- Fait MONITORING — relevés bruts avec flag alerte (sans dimensions)
+-- -----------------------------------------------------------------
+-- Table de faits autonome : ne joint aucune dimension.
+-- Exposée telle quelle en Gold pilotage — Metabase peut grouper par
+-- jour, par heure, filtrer sur is_alerte, etc. sans jointure supplémentaire.
+--
+-- is_alerte = 1 si au moins une constante est hors plage :
+--   FC hors [20–250 bpm] | SpO2 hors [50–100 %] | Temp hors [30–45 °C]
+--
+-- Le stay_id permet de lier à fact_sejour si besoin (drill-through),
+-- mais la table peut être interrogée seule pour la surveillance des constantes.
+CREATE OR REPLACE TABLE silver.fact_monitoring
+ENGINE = MergeTree()
+ORDER BY (stay_id, ts)
+AS SELECT
+    stay_id,
+    ts,
+    toDate(ts)  AS date_mesure,
+    heart_rate,
+    spo2,
+    temp_c,
+    toUInt8(
+        heart_rate NOT BETWEEN 20 AND 250
+        OR spo2    NOT BETWEEN 50 AND 100
+        OR temp_c  NOT BETWEEN 30.0 AND 45.0
+    )           AS is_alerte
+FROM bronze.monitoring
