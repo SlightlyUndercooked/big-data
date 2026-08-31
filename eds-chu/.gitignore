@@ -1,0 +1,17 @@
+# Données — jamais dans le dépôt
+lake/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Plugins téléchargés manuellement
+metabase-plugins/*.jar
+
+# Données Metabase locale
+metabase-data/
