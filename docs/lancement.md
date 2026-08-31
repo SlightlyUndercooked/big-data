@@ -80,24 +80,89 @@ Le pipeline détecte automatiquement les nouvelles dates dans `source-filestorag
 
 ## Configurer Metabase (une seule fois)
 
-Ouvrir http://localhost:3001, créer un compte admin, puis :
+Ouvrir **http://localhost:3001**. Metabase prend ~2 minutes à démarrer la première fois.
 
-**Ajouter deux bases de données** (Settings → Databases → Add database) :
+---
 
-| Champ | Pilotage | Recherche |
+### Étape 1 — Créer le compte administrateur
+
+À la première ouverture, Metabase lance un assistant. Renseigner n'importe quel
+email/mot de passe (c'est un compte local). Passer l'étape "Connecter une base de
+données" pour l'instant — on le fait manuellement ensuite.
+
+---
+
+### Étape 2 — Ajouter la connexion Pilotage
+
+**Settings** (icône engrenage en haut à droite) → **Admin settings** → **Databases** → **Add a database**
+
+Remplir le formulaire :
+
+| Champ | Valeur |
+|---|---|
+| Database type | **ClickHouse** |
+| Display name | `Pilotage hospitalier` |
+| Host | `clickhouse` ⚠️ pas `localhost` — c'est le nom du service Docker |
+| Port | `8123` |
+| Database name | `gold_pilotage` |
+| Username | `default` |
+| Password | *(laisser vide)* |
+
+Cliquer **Save** puis **Sync database schema**.
+
+---
+
+### Étape 3 — Ajouter la connexion Recherche
+
+Même chemin : **Databases** → **Add a database**
+
+| Champ | Valeur |
+|---|---|
+| Database type | **ClickHouse** |
+| Display name | `Recherche clinique` |
+| Host | `clickhouse` |
+| Port | `8123` |
+| Database name | `gold_recherche` |
+| Username | `default` |
+| Password | *(laisser vide)* |
+
+Cliquer **Save** puis **Sync database schema**.
+
+---
+
+### Étape 4 — Créer les groupes d'utilisateurs
+
+**Settings** → **Admin settings** → **People** → **Groups** → **Create a group**
+
+Créer deux groupes :
+- `operationnels`
+- `chercheurs`
+
+---
+
+### Étape 5 — Restreindre les accès par groupe
+
+**Settings** → **Admin settings** → **Permissions** → onglet **Data**
+
+Pour chaque groupe, cliquer sur la ligne correspondante et configurer :
+
+| Groupe | Base autorisée | Base interdite |
 |---|---|---|
-| Type | ClickHouse | ClickHouse |
-| Nom affiché | `Pilotage hospitalier` | `Recherche clinique` |
-| Host | `clickhouse` | `clickhouse` |
-| Port | `8123` | `8123` |
-| Database | `gold_pilotage` | `gold_recherche` |
-| User | `default` | `default` |
+| `operationnels` | `Pilotage hospitalier` → **Can view** | `Recherche clinique` → **No self-service** |
+| `chercheurs` | `Recherche clinique` → **Can view** | `Pilotage hospitalier` → **No self-service** |
 
-> Le host est `clickhouse` (nom du service Docker), pas `localhost`.
+Cliquer **Save changes**.
 
-**Créer deux groupes** (Settings → People → Groups) et restreindre l'accès :
-- `operationnels` → `Pilotage hospitalier` uniquement
-- `chercheurs` → `Recherche clinique` uniquement
+---
+
+### Étape 6 — Créer les utilisateurs
+
+**Settings** → **Admin settings** → **People** → **Invite someone**
+
+Pour chaque utilisateur, renseigner email + mot de passe, et l'affecter au bon groupe
+(`operationnels` ou `chercheurs`). Les membres du groupe `All Users` par défaut ne
+doivent avoir accès à aucune des deux bases (mettre **No self-service** partout pour
+ce groupe).
 
 ---
 
@@ -128,7 +193,7 @@ SELECT * FROM meta.pipeline_runs ORDER BY started_at DESC LIMIT 10;
 
 ---
 
-## Reprise sur incident
+## En cas de problemes
 
 **ClickHouse ne démarre pas :**
 ```bash
