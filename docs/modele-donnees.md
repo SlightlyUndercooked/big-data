@@ -37,42 +37,7 @@ Les deux schémas Gold (pilotage et recherche) partagent la **même définition 
 > **Grain de la table de faits principale : un séjour hospitalier**
 
 ![Schéma Séjour](./images/star_schema_sejour.png)
-```
-                        ┌─────────────────────┐
-                        │   dim_service        │
-                        │─────────────────────│
-                        │ service_code (PK)    │
-                        │ libelle              │
-                        └──────────┬──────────┘
-                                   │
-          ┌──────────────────────────────────────────┐
-          │                                          │
-┌─────────┴──────────┐           ┌───────────────────▼─────────────────┐
-│   dim_patient       │           │   fact_sejour                        │
-│────────────────────│           │─────────────────────────────────────│
-│ patient_pseudo (PK) │◄──────────┤ sejour_id (PK)                      │
-│ birth_year          │           │ patient_pseudo (FK)                  │
-│ sex                 │           │ service_code (FK → dim_service)      │
-└─────────────────────┘           │ date_admission    (Date)             │
-                                  │ date_sortie       (Date, nullable)   │
-                                  │ region_code                          │
-                                  │ admission_mode                       │
-                                  │ discharge_mode                       │
-                                  │ duree_sejour_jours                   │
-                                  │ is_readmission_30j                   │
-                                  │ nb_alertes_monitoring                │
-                                  └─────────────────────────────────────┘
 
-                      fact_monitoring (sans dimension)
-                      ─────────────────────────────────
-                      stay_id
-                      ts
-                      date_mesure
-                      heart_rate
-                      spo2
-                      temp_c
-                      is_alerte
-```
 
 ### Pourquoi ce grain pour fact_sejour ?
 
@@ -99,6 +64,7 @@ Le grain « un séjour » est le plus naturel pour le pilotage hospitalier : tou
 #### `fact_monitoring`
 
 Table de faits **sans dimension** — elle expose le flux brut de constantes vitales, ligne par ligne.
+![Schema Monitoring](./images/fact_monitoring.png)
 
 | Colonne | Type | Description |
 |---|---|---|
@@ -126,28 +92,6 @@ Table de faits **sans dimension** — elle expose le flux brut de constantes vit
 > **Grain de la table de faits : une occurrence de diagnostic sur un séjour**
 
 ![Schema Diagnostic](./images/star_schema_diagnostic.png)
-```
-                        ┌─────────────────────┐
-                        │   dim_pathologie     │
-                        │─────────────────────│
-                        │ code_cim10 (PK)      │
-                        │ libelle              │
-                        │ chapitre             │
-                        └──────────┬──────────┘
-                                   │
-          ┌──────────────────────────────────────────┐
-          │                                          │
-┌─────────┴──────────┐           ┌───────────────────▼─────────────────┐
-│   dim_patient       │           │   fact_diagnostic                    │
-│────────────────────│           │─────────────────────────────────────│
-│ patient_pseudo (PK) │◄──────────┤ diagnostic_id (PK)                  │
-│ birth_year          │           │ patient_pseudo (FK)                  │
-│ sex                 │           │ code_cim10 (FK → dim_pathologie)     │
-└─────────────────────┘           │ date_admission    (Date)             │
-                                  │ type_diag                            │
-                                  │ service_code                         │
-                                  └─────────────────────────────────────┘
-```
 
 > `sejour_id` est absent de `fact_diagnostic` côté recherche : un chercheur ne doit pas pouvoir remonter au séjour de pilotage via une jointure. Le cloisonnement est structurel, pas uniquement déclaratif.
 
