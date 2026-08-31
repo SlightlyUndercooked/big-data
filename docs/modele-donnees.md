@@ -20,32 +20,7 @@ On ne choisit pas le flocon (snowflake) car les dimensions sont simples et peu v
 
 > **Grain de la table de faits : un séjour hospitalier**
 
-```
-                        ┌─────────────────────┐
-                        │   dim_service        │
-                        │─────────────────────│
-                        │ service_code (PK)    │
-                        │ libelle              │
-                        │ pole                 │
-                        └──────────┬──────────┘
-                                   │
-          ┌────────────────────────┼────────────────────────┐
-          │                        │                        │
-┌─────────┴──────────┐  ┌──────────▼──────────┐  ┌─────────┴──────────┐
-│   dim_patient_pilot │  │   fact_sejour        │  │   dim_temps         │
-│────────────────────│  │─────────────────────│  │────────────────────│
-│ patient_pseudo (PK) │◄─┤ sejour_id (PK)      ├─►│ date_id (PK)        │
-│ birth_year          │  │ patient_pseudo (FK)  │  │ date                │
-│ sex                 │  │ service_code (FK)    │  │ annee               │
-│ region_code         │  │ date_admission (FK)  │  │ mois                │
-└─────────────────────┘  │ date_sortie (FK)     │  │ semaine             │
-                         │ admission_mode       │  │ jour_semaine        │
-                         │ discharge_mode       │  └─────────────────────┘
-                         │ duree_sejour_jours   │
-                         │ is_readmission_30j   │
-                         │ nb_alertes_monitoring│
-                         └─────────────────────┘
-```
+![Schéma Séjour](./images/star_schema_sejour.png)
 
 ### Pourquoi ce grain ?
 
@@ -104,30 +79,7 @@ La dimension temps est construite artificiellement (génération d'un calendrier
 
 > **Grain de la table de faits : une occurrence de diagnostic sur un séjour**
 
-```
-                        ┌─────────────────────┐
-                        │   dim_pathologie     │
-                        │─────────────────────│
-                        │ code_cim10 (PK)      │
-                        │ libelle              │
-                        │ chapitre             │
-                        │ groupe               │
-                        └──────────┬──────────┘
-                                   │
-          ┌────────────────────────┼────────────────────────┐
-          │                        │                        │
-┌─────────┴──────────┐  ┌──────────▼──────────┐  ┌─────────┴──────────┐
-│  dim_patient_search │  │   fact_diagnostic    │  │   dim_temps         │
-│────────────────────│  │─────────────────────│  │────────────────────│
-│ patient_pseudo (PK) │◄─┤ diagnostic_id (PK)  ├─►│ date_id (PK)        │
-│ birth_year          │  │ patient_pseudo (FK)  │  │ date                │
-│ sex                 │  │ code_cim10 (FK)      │  │ annee               │
-│ age_admission       │  │ sejour_id            │  │ mois                │
-└─────────────────────┘  │ date_admission (FK)  │  │ semaine             │
-                         │ type_diag            │  │ jour_semaine        │
-                         │ service_code         │  └─────────────────────┘
-                         └─────────────────────┘
-```
+![Schema Diagnostic](./images/star_schema_diagnostic.png)
 
 ### Pourquoi ce grain ?
 
