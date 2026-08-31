@@ -107,14 +107,23 @@ FROM bronze.cim10 FINAL;
 CREATE OR REPLACE TABLE silver.dim_patient
 ENGINE = MergeTree()
 ORDER BY patient_pseudo
-AS SELECT
+-- Sous-requête nécessaire : ClickHouse étend les alias SELECT dans le WHERE,
+-- ce qui provoquerait "aggregate function found in WHERE" si on filtrait sex
+-- directement dans la requête principale (argMax(sex,...) AS sex serait vu
+-- comme une agrégation dans le WHERE). Le filtre est donc appliqué avant
+-- l'agrégation, dans un CTE.
+AS
+WITH base AS (
+    SELECT * FROM bronze.patients
+    WHERE patient_pseudo != ''
+      AND sex IN ('M', 'F')
+)
+SELECT
     patient_pseudo,
     argMax(birth_year,  _source_date) AS birth_year,
     argMax(sex,         _source_date) AS sex,
     argMax(region_code, _source_date) AS region_code
-FROM bronze.patients
-WHERE patient_pseudo != ''
-  AND sex IN ('M', 'F')
+FROM base
 GROUP BY patient_pseudo;
 
 -- -----------------------------------------------------------------

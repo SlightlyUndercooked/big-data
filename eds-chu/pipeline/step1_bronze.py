@@ -11,10 +11,6 @@ Formats gérés :
   - JSON imbriqué (diagnostics) : dépliés en Python avant insertion
   - Parquet (monitoring) : lus avec PyArrow, inséré via insert_arrow (efficace)
 
-Pourquoi pas de pandas ici ?
-  On charge les fichiers directement dans ClickHouse sans passer par un DataFrame.
-  La transformation des données (nettoyage, agrégation) se fait en SQL en Silver.
-  Ce fichier ne fait que du chargement (parsing de types + INSERT).
 """
 import csv
 import json

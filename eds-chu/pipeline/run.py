@@ -1,21 +1,20 @@
 """
-ORCHESTRATEUR — Point d'entrée du pipeline EDS-CHU
+ORCHESTRATEUR Point d'entrée du pipeline EDS-CHU
 
 Usage :
     cd eds-chu/
     python -m pipeline.run
 
-Comportement :
+Action :
     1. Découvre automatiquement les dates disponibles dans SOURCE_DIR
     2. Copie et pseudonymise les nouvelles dates vers le lake (step0)
-    3. Charge les nouvelles dates en Bronze (step1) — incrémental
+    3. Charge les nouvelles dates en Bronze (step1), incrémental
     4. Reconstruit Silver depuis tout le Bronze (step2)
     5. Recrée les vues Gold (step3)
 
 Le pipeline est conçu pour être rejoué quotidiennement (cron).
-Chaque run est idempotent : relancer deux fois le même jour ne duplique pas.
 
-Traçabilité : chaque run Bronze est enregistré dans meta.pipeline_runs.
+Traçabilité : chaque run Bronze est enregistré dans meta.pipeline_runs
 En cas d'erreur, le statut 'error' est enregistré et le run s'arrête.
 """
 import logging
@@ -86,16 +85,16 @@ def run() -> None:
         if loaded:
             new_dates.append(date_str)
 
-    if not new_dates:
-        log.info("Aucune nouvelle date. Pipeline terminé sans modification.")
-        return
+    if new_dates:
+        log.info(f"Nouvelles dates chargées en Bronze : {new_dates}")
+    else:
+        log.info("Aucune nouvelle date en Bronze.")
 
-    log.info(f"Nouvelles dates chargées en Bronze : {new_dates}")
-
-    # Step 2 : reconstruction Silver depuis tout le Bronze
+    # Silver et Gold sont toujours reconstruits : Silver est une transformation
+    # complète de Bronze, pas une accumulation. Reconstruire est idempotent,
+    # rapide (<1s sur ce volume), et garantit la cohérence même si un run
+    # précédent a échoué à mi-chemin.
     build_silver(ch)
-
-    # Step 3 : vues Gold (idempotent)
     build_gold(ch)
 
     log.info("=" * 60)
