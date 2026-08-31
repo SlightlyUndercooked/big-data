@@ -1,24 +1,20 @@
 """
 ÉTAPE 0 — COPIE VERS LE LAKE ET PSEUDONYMISATION
 
-C'est le point de contrôle RGPD : aucune donnée identifiante ne doit
-franchir cette frontière vers l'entrepôt.
-
-Transformations appliquées ici, et UNIQUEMENT ici :
-  - patient_id  → HMAC-SHA256(patient_id, sel) = patient_pseudo
-  - nom, prenom, nir → supprimés définitivement
-  - birth_date  → birth_year (généralisation à l'année)
-  - sex         → normalisé en 'M'/'F' (minuscule, valeurs inattendues → '?')
+Transformations appliquées ici :
+  - patient_id → HMAC-SHA256(patient_id, sel) = patient_pseudo
+  - nom, prenom, nir → supprimés
+  - birth_date → birth_year (seulement l'année)
+  - sex → normalisé en 'M'/'F' (minuscule, valeurs inattendues → '?')
 
 Les fichiers sans PII (diagnostics, monitoring, référentiels) sont copiés
 tels quels. L'opération est idempotente : si le fichier lake existe déjà,
-on ne le recalcule pas (le résultat serait identique — HMAC déterministe).
+on ne le recalcule pas car on aurait le meme résultat
 
 Pourquoi HMAC-SHA256 et pas SHA256 simple ?
   SHA256(patient_id) sans sel permet une attaque par dictionnaire :
   un attaquant qui connaît la liste des IPP peut retrouver tous les pseudos.
   HMAC avec sel secret rend cette attaque impossible sans le sel.
-  Le sel est dans .env, jamais dans le dépôt git.
 """
 import csv
 import hashlib

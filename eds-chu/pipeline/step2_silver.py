@@ -3,7 +3,7 @@
 
 Rôle : nettoyer, dédupliquer et enrichir les données Bronze.
 TOUTE la logique métier est dans le fichier SQL (sql/silver.sql).
-Ce fichier Python ne fait qu'envoyer les requêtes à ClickHouse.
+Ici on ne fait qu'envoyer les requêtes à ClickHouse.
 
 Silver est reconstruite entièrement à chaque run (CREATE OR REPLACE TABLE).
 Cela garantit que Silver reflète toujours l'état complet de Bronze,
@@ -12,9 +12,9 @@ L'incrémentalité est gérée au niveau Bronze (on n'insère pas deux fois
 la même date source).
 
 Contrôles qualité appliqués en SQL Silver (cf. sql/silver.sql) :
-  - patients    : déduplication par argMax(_source_date), filtre sex IN ('M','F')
-  - séjours     : écart si discharge_ts < admission_ts (136 cas détectés)
-  - monitoring  : comptage des alertes hors plage physiologique par séjour
+  - patients : déduplication par argMax(_source_date), filtre sex IN ('M','F')
+  - séjours : écart si discharge_ts < admission_ts (136 cas détectés)
+  - monitoring : comptage des alertes hors plage physiologique par séjour
   - diagnostics : inner join avec séjours valides (écarte les diagnostics orphelins)
   - réadmissions: calcul par fenêtre glissante (lagInFrame) en SQL ClickHouse
 """

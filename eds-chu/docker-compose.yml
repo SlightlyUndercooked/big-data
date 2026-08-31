@@ -30,7 +30,7 @@ services:
   # ---------------------------------------------------------------
   # Metabase — dashboards, cloisonnement des droits
   # ---------------------------------------------------------------
-  # Accès : http://localhost:3000
+  # Accès : http://localhost:3001  (3000 réservé au portfolio)
   #
   # Pré-requis : télécharger le driver ClickHouse pour Metabase
   # et le placer dans ./metabase-plugins/
@@ -48,7 +48,7 @@ services:
   metabase:
     image: metabase/metabase:v0.51.4
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - metabase_data:/metabase-data
       - ./metabase-plugins:/plugins
