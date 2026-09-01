@@ -11,6 +11,13 @@ Les fichiers sans PII (diagnostics, monitoring, référentiels) sont copiés
 tels quels. L'opération est idempotente : si le fichier lake existe déjà,
 on ne le recalcule pas car on aurait le meme résultat
 
+Écritures atomiques (résilience aux crashs) :
+  Chaque fichier est d'abord écrit dans un compagnon .tmp, puis renommé
+  vers son nom final via os.replace (atomique sur POSIX). Conséquence :
+  soit le fichier définitif est complet, soit il n'existe pas. Un crash
+  en cours d'écriture ne laisse jamais de fichier tronqué qui serait
+  ensuite considéré comme "déjà présent" et jamais retenté.
+
 Pourquoi HMAC-SHA256 et pas SHA256 simple ?
   SHA256(patient_id) sans sel permet une attaque par dictionnaire :
   un attaquant qui connaît la liste des IPP peut retrouver tous les pseudos.
@@ -20,12 +27,29 @@ import csv
 import hashlib
 import hmac
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pyarrow.parquet as pq
 
 from . import config
+
+
+def _tmp_path(dst: Path) -> Path:
+    """Chemin temporaire compagnon dans le même répertoire.
+
+    Même répertoire = même système de fichiers → os.replace est
+    garanti atomique par le noyau (rename(2) POSIX).
+    """
+    return dst.with_name(dst.name + ".tmp")
+
+
+def _atomic_copy(src: Path, dst: Path) -> None:
+    """Copie src → dst de manière atomique via .tmp + os.replace."""
+    tmp = _tmp_path(dst)
+    shutil.copy2(src, tmp)
+    os.replace(tmp, dst)
 
 
 def _pseudonymize(patient_id: str) -> str:
@@ -64,9 +88,12 @@ def _copy_patients(date_str: str) -> int:
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _tmp_path(dst)
     count = 0
 
-    with open(src, newline="") as fin, open(dst, "w", newline="") as fout:
+    # Écriture d'abord dans .tmp : si le processus meurt avant os.replace,
+    # dst n'existe toujours pas et le prochain run reprendra la date.
+    with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
         reader = csv.DictReader(fin)
         # Colonnes de sortie : PII supprimées, birth_date réduite à birth_year.
         # La généralisation birth_date → birth_year réduit la précision
@@ -87,6 +114,7 @@ def _copy_patients(date_str: str) -> int:
             })
             count += 1
 
+    os.replace(tmp, dst)
     return count
 
 
@@ -97,9 +125,10 @@ def _copy_sejours(date_str: str) -> int:
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _tmp_path(dst)
     count = 0
 
-    with open(src, newline="") as fin, open(dst, "w", newline="") as fout:
+    with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
         reader = csv.DictReader(fin)
         # patient_id remplacé par patient_pseudo avec le MÊME sel que pour patients.
         # C'est ce qui rend les jointures possibles en Silver :
@@ -125,6 +154,7 @@ def _copy_sejours(date_str: str) -> int:
             })
             count += 1
 
+    os.replace(tmp, dst)
     return count
 
 
@@ -138,7 +168,7 @@ def _copy_diagnostics(date_str: str) -> int:
     # Copie brute : les diagnostics ne contiennent pas de PII (seulement stay_id).
     # Le stay_id n'est pas un identifiant direct du patient — il ne permet pas
     # de retrouver l'identité sans passer par la table séjours pseudonymisée.
-    shutil.copy2(src, dst)
+    _atomic_copy(src, dst)
 
     with open(dst) as f:
         return len(json.load(f))
@@ -153,7 +183,7 @@ def _copy_monitoring(date_str: str) -> int:
     dst.parent.mkdir(parents=True, exist_ok=True)
     # Copie brute : le monitoring ne contient que stay_id + constantes vitales.
     # Pas de PII, pas de transformation nécessaire.
-    shutil.copy2(src, dst)
+    _atomic_copy(src, dst)
 
     t = pq.read_table(dst)
     return t.num_rows
@@ -175,7 +205,7 @@ def copy_referentiels() -> None:
     for f in src_dir.glob("*.csv"):
         dst_file = ref_dst / f.name
         if not dst_file.exists():
-            shutil.copy2(f, dst_file)
+            _atomic_copy(f, dst_file)
 
 
 def copy_date_to_lake(date_str: str) -> dict:
