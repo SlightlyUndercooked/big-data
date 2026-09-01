@@ -16,7 +16,11 @@ Contrôles qualité appliqués en SQL Silver (cf. sql/silver.sql) :
   - séjours : écart si discharge_ts < admission_ts (136 cas détectés)
   - monitoring : comptage des alertes hors plage physiologique par séjour
   - diagnostics : inner join avec séjours valides (écarte les diagnostics orphelins)
+                  + calcul de l'âge au diagnostic (année admission - birth_year)
   - réadmissions: calcul par fenêtre glissante (lagInFrame) en SQL ClickHouse
+
+Les tables intermédiaires internes à Silver portent le suffixe _stg
+(sejours_stg, monitoring_alertes_stg) : elles ne sont pas exposées en Gold.
 """
 import logging
 from pathlib import Path

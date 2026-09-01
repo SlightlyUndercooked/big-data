@@ -5,7 +5,7 @@
   SELECT count() FROM bronze.sejours
   WHERE discharge_ts IS NOT NULL AND discharge_ts < admission_ts;
 
-  SELECT count() FROM silver.sejours_clean
+  SELECT count() FROM silver.sejours_stg
   WHERE discharge_ts IS NOT NULL AND discharge_ts < admission_ts;
 
   2. La déduplication patients a bien fonctionné
@@ -27,9 +27,9 @@
   SELECT count() FROM bronze.diagnostics;
   SELECT count() FROM silver.fact_diagnostic;
 
-  -- Aucun diagnostic ne doit pointer vers un séjour absent de sejours_clean
+  -- Aucun diagnostic ne doit pointer vers un séjour absent de sejours_stg
   SELECT count() FROM silver.fact_diagnostic f
-  WHERE f.stay_id NOT IN (SELECT stay_id FROM silver.sejours_clean);
+  WHERE f.stay_id NOT IN (SELECT stay_id FROM silver.sejours_stg);
   -- doit retourner 0
 
   4. Les réadmissions sont calculées
@@ -49,7 +49,7 @@
 
   5. Les alertes monitoring sont cohérentes
 
-  SELECT sum(nb_alertes_monitoring) FROM silver.monitoring_alertes;
+  SELECT sum(nb_alertes_monitoring) FROM silver.monitoring_alertes_stg;
   -- doit être 1369
 
   -- Cohérence Bronze → Silver
@@ -63,3 +63,9 @@
   
   SELECT code_cim10, chapitre FROM silver.dim_pathologie ORDER BY code_cim10;
   -- aucune ligne ne doit avoir chapitre = 'Autre'
+
+  7. L'âge au diagnostic est plausible
+
+  SELECT min(age_au_diagnostic), max(age_au_diagnostic)
+  FROM silver.fact_diagnostic;
+  -- attendu : min >= 0 et max <= ~110

@@ -109,6 +109,7 @@ Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés)
 | `patient_pseudo` | String | FK → dim_patient | Même pseudonyme que côté pilotage — le sel est identique, le même patient_id produit le même hash dans les deux schémas |
 | `code_cim10` | String | FK → dim_pathologie | Pivot vers le libellé et la hiérarchie CIM-10 |
 | `date_admission` | Date | FK → dim_temps | Date d'entrée du séjour — situe le diagnostic dans le temps |
+| `age_au_diagnostic` | Int | Âge du patient au diagnostic | Calculé en Silver : `toYear(date_admission) - birth_year`. Le diagnostic n'ayant pas de date propre dans la source, la date d'admission du séjour sert de référence |
 | `type_diag` | String | principal / associe | Crucial : la prévalence se mesure sur les diagnostics principaux uniquement |
 | `service_code` | String | Service lors du diagnostic | Dénormalisé pour éviter une dépendance entre les schémas Gold |
 

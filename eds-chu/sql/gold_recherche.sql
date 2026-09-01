@@ -48,6 +48,7 @@ SELECT
     patient_pseudo,
     code_cim10,
     date_admission,
+    age_au_diagnostic,
     type_diag,
     service_code
     -- stay_id absent : évite la jointure vers les tables pilotage
@@ -83,9 +84,8 @@ ORDER BY nb_patients DESC;
 -- -----------------------------------------------------------------
 -- KPI 2 : Description de cohorte — distribution âge et sexe
 -- -----------------------------------------------------------------
--- Calcul de l'âge à l'admission :
---   toYear(date_admission) - birth_year
---   (approximation correcte pour des statistiques de population)
+-- L'âge au diagnostic est calculé en Silver (fact_diagnostic.age_au_diagnostic
+-- = toYear(admission) - birth_year) : ici on ne fait que le découpage en tranches.
 --
 -- Agrégé par TRANCHE DE 10 ANS pour réduire le risque de ré-identification :
 --   (age DIV 10) * 10     → borne inférieure de la tranche (ex: 60)
@@ -96,11 +96,11 @@ ORDER BY nb_patients DESC;
 CREATE OR REPLACE VIEW gold_recherche.v_description_cohorte AS
 SELECT
     d.code_cim10,
-    path.libelle                                              AS pathologie,
+    path.libelle                              AS pathologie,
     p.sex,
-    (toYear(d.date_admission) - p.birth_year) DIV 10 * 10    AS tranche_age_debut,
-    (toYear(d.date_admission) - p.birth_year) DIV 10 * 10 + 9 AS tranche_age_fin,
-    count(DISTINCT d.patient_pseudo)                          AS nb_patients
+    d.age_au_diagnostic DIV 10 * 10           AS tranche_age_debut,
+    d.age_au_diagnostic DIV 10 * 10 + 9       AS tranche_age_fin,
+    count(DISTINCT d.patient_pseudo)          AS nb_patients
 FROM silver.fact_diagnostic d
 LEFT JOIN silver.dim_patient    p    ON d.patient_pseudo = p.patient_pseudo
 LEFT JOIN silver.dim_pathologie path ON d.code_cim10 = path.code_cim10

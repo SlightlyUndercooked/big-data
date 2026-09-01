@@ -19,9 +19,9 @@
 --
 -- 6 tables produites :
 --   Dimensions : dim_service, dim_pathologie, dim_patient
---   Intermédiaire : sejours_clean (nettoyage, non exposée en Gold)
+--   Intermédiaires (suffixe _stg, non exposées en Gold) :
+--     sejours_stg (nettoyage), monitoring_alertes_stg (agrégat par séjour)
 --   Faits : fact_sejour, fact_diagnostic, fact_monitoring
---   Agrégat : monitoring_alertes (utilisé par fact_sejour)
 -- ===================================================================
 
 CREATE DATABASE IF NOT EXISTS silver;
@@ -143,15 +143,15 @@ GROUP BY patient_pseudo;
 --   CONSERVÉS: discharge_ts > admission_ts (séjour terminé valide)
 --
 -- Pourquoi une table intermédiaire et pas filtrer directement dans fact_sejour ?
---   sejours_clean est réutilisée par fact_sejour ET fact_diagnostic.
+--   sejours_stg est réutilisée par fact_sejour ET fact_diagnostic.
 --   Sans elle, il faudrait dupliquer le même filtre WHERE dans deux requêtes,
 --   avec le risque qu'elles divergent. Une seule définition = une seule source de vérité.
 -- Vérification :
 --   SELECT count() FROM bronze.sejours WHERE discharge_ts IS NOT NULL
 --     AND discharge_ts < admission_ts  → doit être 136
---   SELECT count() FROM silver.sejours_clean WHERE discharge_ts IS NOT NULL
+--   SELECT count() FROM silver.sejours_stg WHERE discharge_ts IS NOT NULL
 --     AND discharge_ts < admission_ts  → doit être 0
-CREATE OR REPLACE TABLE silver.sejours_clean
+CREATE OR REPLACE TABLE silver.sejours_stg
 ENGINE = MergeTree()
 ORDER BY stay_id
 AS SELECT
@@ -180,7 +180,7 @@ WHERE discharge_ts IS NULL
 -- On agrège par séjour pour éviter d'exposer 72k lignes brutes en Gold.
 -- Le détail complet reste accessible dans bronze.monitoring pour des
 -- analyses ciblées (ex: évolution de la FC d'un patient sur un séjour).
-CREATE OR REPLACE TABLE silver.monitoring_alertes
+CREATE OR REPLACE TABLE silver.monitoring_alertes_stg
 ENGINE = MergeTree()
 ORDER BY stay_id
 AS SELECT
@@ -219,7 +219,7 @@ GROUP BY stay_id;
 --      WHERE is_readmission_30j = 1  → doit être > 0
 --
 -- 3. nb_alertes_monitoring :
---    Joint depuis silver.monitoring_alertes (calculé ci-dessus).
+--    Joint depuis silver.monitoring_alertes_stg (calculé ci-dessus).
 --    coalesce(..., 0) car certains séjours peuvent ne pas avoir de monitoring.
 CREATE OR REPLACE TABLE silver.fact_sejour
 ENGINE = MergeTree()
@@ -239,7 +239,7 @@ WITH prev AS (
             ORDER BY admission_ts
             ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
         ) AS prev_discharge_ts
-    FROM silver.sejours_clean
+    FROM silver.sejours_stg
 )
 SELECT
     stay_id,
@@ -261,7 +261,7 @@ SELECT
     )                     AS is_readmission_30j,
     coalesce(m.nb_alertes_monitoring, 0) AS nb_alertes_monitoring
 FROM prev
-LEFT JOIN silver.monitoring_alertes m USING (stay_id);
+LEFT JOIN silver.monitoring_alertes_stg m USING (stay_id);
 
 -- -----------------------------------------------------------------
 -- Fait DIAGNOSTIC — central pour la recherche clinique
@@ -270,11 +270,11 @@ LEFT JOIN silver.monitoring_alertes m USING (stay_id);
 -- Un séjour peut avoir plusieurs diagnostics (principal + associés).
 -- Ce grain permet des requêtes directes par pathologie sans dépiler un tableau.
 --
--- INNER JOIN avec sejours_clean :
+-- INNER JOIN avec sejours_stg :
 --   - Récupère patient_pseudo (absent de bronze.diagnostics — le JSON source
 --     ne contient que stay_id, pas patient_pseudo)
 --   - Écarte automatiquement les diagnostics liés à des séjours invalides
---     (ceux filtrés lors de la construction de sejours_clean)
+--     (ceux filtrés lors de la construction de sejours_stg)
 -- Pourquoi INNER JOIN et pas LEFT JOIN ?
 --   Un LEFT JOIN garderait les diagnostics dont le séjour a été écarté en Silver
 --   (les 136 incohérents), avec patient_pseudo = NULL. Ces lignes seraient
@@ -282,6 +282,15 @@ LEFT JOIN silver.monitoring_alertes m USING (stay_id);
 --   les diagnostics dont on peut garantir la validité du séjour associé.
 -- Vérification : SELECT count() FROM silver.fact_diagnostic
 --   → doit être inférieur à bronze.diagnostics (37 380)
+--
+-- age_au_diagnostic :
+--   Le JSON source des diagnostics ne porte pas de date propre, la date de
+--   référence du diagnostic est la date d'admission du séjour associé.
+--   Âge = toYear(admission) - birth_year (jointure sur silver.dim_patient).
+--   Approximation à l'année près, correcte pour des statistiques de population
+--   (birth_year est déjà généralisé en Bronze pour la pseudonymisation).
+--   Calculé ici en Silver pour que Gold n'ait plus qu'à consommer la colonne
+--   (ex: tranches d'âge de gold_recherche.v_description_cohorte).
 --
 -- diagnostic_id = concat(stay_id, '_', code_cim10, '_', type_diag)
 --   Clé surrogate stable et reproductible, sans séquence auto-incrémentée
@@ -291,14 +300,16 @@ ENGINE = MergeTree()
 ORDER BY (code_cim10, patient_pseudo, stay_id)
 AS SELECT
     concat(d.stay_id, '_', d.code_cim10, '_', d.type_diag) AS diagnostic_id,
-    s.patient_pseudo,
-    d.code_cim10,
-    d.stay_id,
+    s.patient_pseudo AS patient_pseudo,
+    d.code_cim10 AS code_cim10,
+    d.stay_id AS stay_id,
     toDate(s.admission_ts) AS date_admission,
-    d.type_diag,
-    s.service_code
+    toYear(s.admission_ts) - p.birth_year AS age_au_diagnostic,
+    d.type_diag AS type_diag,
+    s.service_code AS service_code
 FROM bronze.diagnostics d
-INNER JOIN silver.sejours_clean s ON d.stay_id = s.stay_id;
+INNER JOIN silver.sejours_stg s ON d.stay_id = s.stay_id
+INNER JOIN silver.dim_patient p ON s.patient_pseudo = p.patient_pseudo;
 
 -- -----------------------------------------------------------------
 -- Fait MONITORING — relevés bruts avec flag alerte (sans dimensions)
@@ -324,7 +335,7 @@ AS SELECT
     temp_c,
     toUInt8(
         heart_rate NOT BETWEEN 20 AND 250
-        OR spo2    NOT BETWEEN 50 AND 100
-        OR temp_c  NOT BETWEEN 30.0 AND 45.0
+        OR spo2 NOT BETWEEN 50 AND 100
+        OR temp_c NOT BETWEEN 30.0 AND 45.0
     )           AS is_alerte
 FROM bronze.monitoring
