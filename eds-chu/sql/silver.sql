@@ -5,14 +5,23 @@
 -- dimensionnelles et de faits consommables par la couche Gold.
 --
 -- Principe architectural clé : TOUTES les transformations métier sont
--- ici, en SQL ClickHouse. Python ne fait qu'envoyer ces requêtes
--- (pas de pandas, pas de transformation en mémoire Python).
+-- ici, en SQL ClickHouse. Python ne fait qu'envoyer ces requêtes.
+--   pandas charge tout en mémoire Python — inefficace sur de gros volumes
+--   et difficile à auditer. ClickHouse exécute les transformations côté serveur,
+--   directement sur les données stockées, sans transfert réseau inutile.
 --
--- Silver est reconstruite entièrement à chaque run du pipeline
--- via CREATE OR REPLACE TABLE (atomique dans ClickHouse).
--- Cela garantit la cohérence : Silver reflète toujours l'état complet
--- de Bronze, sans résidu de runs précédents.
--- L'incrémentalité est gérée UNIQUEMENT en Bronze.
+--   Silver n'accumule pas de données, elle transforme. CREATE OR REPLACE TABLE
+--   est atomique dans ClickHouse : la nouvelle table remplace l'ancienne en une
+--   seule opération. Cela garantit qu'un bug corrigé dans Bronze se répercute
+--   immédiatement en Silver, sans résidu de runs précédents. Sur ce volume
+--   (<15k séjours), la reconstruction complète prend moins d'une seconde.
+--   L'incrémentalité est gérée UNIQUEMENT dans Bronze (meta.pipeline_runs).
+--
+-- 6 tables produites :
+--   Dimensions : dim_service, dim_pathologie, dim_patient
+--   Intermédiaire : sejours_clean (nettoyage, non exposée en Gold)
+--   Faits : fact_sejour, fact_diagnostic, fact_monitoring
+--   Agrégat : monitoring_alertes (utilisé par fact_sejour)
 -- ===================================================================
 
 CREATE DATABASE IF NOT EXISTS silver;
@@ -20,8 +29,16 @@ CREATE DATABASE IF NOT EXISTS silver;
 -- -----------------------------------------------------------------
 -- Dimension SERVICE
 -- -----------------------------------------------------------------
--- FINAL force la déduplication ReplacingMergeTree immédiatement,
--- sans attendre le prochain merge automatique de ClickHouse.
+-- bronze.services est un ReplacingMergeTree : ses doublons ne sont pas
+-- éliminés immédiatement, seulement lors des merges automatiques ClickHouse.
+-- FINAL dans "FROM bronze.services FINAL" force la déduplication à la lecture :
+-- Silver reçoit des données déjà propres, sans doublons.
+-- La table destination (silver.dim_service) est un MergeTree classique :
+-- elle reçoit des données déjà propres, pas besoin de gérer les doublons.
+-- On utilise FINAL ici (et pas argMax) car les services n'ont pas de
+-- versionnage : il n'y a pas plusieurs valeurs à comparer, juste des
+-- doublons éventuels à éliminer. FINAL suffit.
+-- Vérification : SELECT count() FROM silver.dim_service → attendu 8
 CREATE OR REPLACE TABLE silver.dim_service
 ENGINE = MergeTree()
 ORDER BY service_code
@@ -31,13 +48,17 @@ AS SELECT
 FROM bronze.services FINAL;
 
 -- -----------------------------------------------------------------
--- Dimension PATHOLOGIE — référentiel CIM-10 enrichi du chapitre
+-- Dimension PATHOLOGIE référentiel CIM-10 enrichi du chapitre
 -- -----------------------------------------------------------------
 -- Le fichier source contient uniquement code + libellé.
 -- On dérive le chapitre à partir du premier caractère du code CIM-10,
--- convention internationale (A-B = infectieux, I = circulatoire, etc.).
+-- convention internationale
+-- Cette colonne n'existe pas dans la source — c'est un enrichissement Silver.
 -- Dénormalisé (pas de table chapitre séparée) car le référentiel CIM-10
--- est petit (~10 codes ici, ~14 000 en réel) et stable.
+-- est petit (10 codes ici, 14 000 en réel) et stable : une jointure
+-- supplémentaire n'apporterait aucune valeur.
+-- Vérification : SELECT code_cim10, chapitre FROM silver.dim_pathologie
+--   → chapitre ne doit jamais être 'Autre' pour des codes I**, J**, etc.
 CREATE OR REPLACE TABLE silver.dim_pathologie
 ENGINE = MergeTree()
 ORDER BY code_cim10
@@ -72,12 +93,16 @@ AS SELECT
 FROM bronze.cim10 FINAL;
 
 -- -----------------------------------------------------------------
--- Dimension PATIENT — dédupliquée, version la plus récente par patient
+-- Dimension PATIENT dédupliquée, version la plus récente par patient
 -- -----------------------------------------------------------------
 -- Le CHU envoie un dump cumulatif chaque jour : 5400/6000 patients
 -- apparaissent sur plusieurs jours (confirmé à l'exploration).
+-- Bronze contient donc 16 200 lignes pour ~6 000 patients distincts.
 -- On garde la version du fichier le plus récent avec argMax(_source_date).
 -- argMax(valeur, date) retourne la valeur associée à la date la plus récente.
+--   FINAL élimine les doublons mais ne garantit pas quelle version est gardée.
+--   argMax est explicite : on choisit délibérément la version la plus récente,
+--   ce qui est le comportement correct pour des données cumulatives.
 --
 -- Contrôle qualité :
 --   - sex IN ('M', 'F') : valeurs invalides écartées
@@ -85,6 +110,7 @@ FROM bronze.cim10 FINAL;
 --
 -- region_code est inclus ici (nécessaire pour gold_pilotage).
 -- gold_recherche exclura region_code dans sa vue (principe de minimisation RGPD).
+-- Vérification : SELECT count() FROM silver.dim_patient → doit être < 16 200
 CREATE OR REPLACE TABLE silver.dim_patient
 ENGINE = MergeTree()
 ORDER BY patient_pseudo
@@ -115,6 +141,16 @@ GROUP BY patient_pseudo;
 --              → 136 cas détectés à l'exploration (incohérence temporelle)
 --   CONSERVÉS: discharge_ts IS NULL (séjour en cours — valeur légitime)
 --   CONSERVÉS: discharge_ts > admission_ts (séjour terminé valide)
+--
+-- Pourquoi une table intermédiaire et pas filtrer directement dans fact_sejour ?
+--   sejours_clean est réutilisée par fact_sejour ET fact_diagnostic.
+--   Sans elle, il faudrait dupliquer le même filtre WHERE dans deux requêtes,
+--   avec le risque qu'elles divergent. Une seule définition = une seule source de vérité.
+-- Vérification :
+--   SELECT count() FROM bronze.sejours WHERE discharge_ts IS NOT NULL
+--     AND discharge_ts < admission_ts  → doit être 136
+--   SELECT count() FROM silver.sejours_clean WHERE discharge_ts IS NOT NULL
+--     AND discharge_ts < admission_ts  → doit être 0
 CREATE OR REPLACE TABLE silver.sejours_clean
 ENGINE = MergeTree()
 ORDER BY stay_id
@@ -173,7 +209,14 @@ GROUP BY stay_id;
 --    donne la date de sortie du séjour PRÉCÉDENT du même patient.
 --    Si cette sortie précédente existe et a eu lieu entre 1 et 30 jours
 --    avant l'admission courante, c'est une réadmission précoce.
---    (BETWEEN 1 AND 30 : exclut 0 jour = le même jour = probablement une mutation)
+--    BETWEEN 1 AND 30 : la borne inférieure à 1 exclut 0 jour (même jour),
+--    qui correspond à une mutation entre services et non à une réadmission.
+--    Pourquoi une fenêtre SQL et pas un self-join ?
+--      Un self-join (séjours JOIN séjours sur patient_pseudo) serait O(n²).
+--      lagInFrame est O(n) : il parcourt les séjours triés par patient une
+--      seule fois et regarde simplement la ligne précédente.
+--    Vérification : SELECT count() FROM silver.fact_sejour
+--      WHERE is_readmission_30j = 1  → doit être > 0
 --
 -- 3. nb_alertes_monitoring :
 --    Joint depuis silver.monitoring_alertes (calculé ci-dessus).
@@ -228,9 +271,17 @@ LEFT JOIN silver.monitoring_alertes m USING (stay_id);
 -- Ce grain permet des requêtes directes par pathologie sans dépiler un tableau.
 --
 -- INNER JOIN avec sejours_clean :
---   - Récupère patient_pseudo (absent de bronze.diagnostics)
+--   - Récupère patient_pseudo (absent de bronze.diagnostics — le JSON source
+--     ne contient que stay_id, pas patient_pseudo)
 --   - Écarte automatiquement les diagnostics liés à des séjours invalides
 --     (ceux filtrés lors de la construction de sejours_clean)
+-- Pourquoi INNER JOIN et pas LEFT JOIN ?
+--   Un LEFT JOIN garderait les diagnostics dont le séjour a été écarté en Silver
+--   (les 136 incohérents), avec patient_pseudo = NULL. Ces lignes seraient
+--   inutilisables et pollueraient les analyses. INNER JOIN = on ne garde que
+--   les diagnostics dont on peut garantir la validité du séjour associé.
+-- Vérification : SELECT count() FROM silver.fact_diagnostic
+--   → doit être inférieur à bronze.diagnostics (37 380)
 --
 -- diagnostic_id = concat(stay_id, '_', code_cim10, '_', type_diag)
 --   Clé surrogate stable et reproductible, sans séquence auto-incrémentée
