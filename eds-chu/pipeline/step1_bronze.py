@@ -6,6 +6,16 @@ Rôle : lire les fichiers du lake et les insérer dans les tables Bronze de Clic
 Principe incrémental : on consulte meta.pipeline_runs pour ne jamais insérer
 deux fois la même date. Si la date est déjà marquée 'success', on la saute.
 
+Résilience aux crashs (idempotence forte) :
+  Le chargement d'une date fait 4 inserts séparés (patients, séjours,
+  diagnostics, monitoring). Un crash entre deux inserts laisserait des
+  lignes partielles en base, que le prochain run reviendrait dupliquer
+  (les tables séjours/diagnostics/monitoring sont en MergeTree pur,
+  sans déduplication). Pour l'éviter, on lance systématiquement un
+  _cleanup_date au début de chaque tentative : tout ce qui porte
+  _source_date = date_str est supprimé avant réinsertion. Le run n'est
+  considéré comme réussi qu'après le _record_run 'success' final.
+
 Typage comme premier filet de qualité :
   Toutes les sources arrivent en texte brut (CSV = tout string, JSON = tout string).
   Python convertit les valeurs avant insertion : str → datetime, str → int, etc.
@@ -67,6 +77,50 @@ def init_bronze(ch) -> None:
     """
     log.info("Initialisation du schéma Bronze et Meta...")
     _exec_sql_file(ch, "bronze.sql")
+
+
+# Tables Bronze chargées par date, indexées sur _source_date pour le cleanup.
+# Les référentiels ne sont pas dans cette liste : ils sont traités séparément
+# (pas de colonne _source_date, cf. _cleanup_referentiels).
+_BRONZE_TABLES_PAR_DATE = (
+    "bronze.patients",
+    "bronze.sejours",
+    "bronze.diagnostics",
+    "bronze.monitoring",
+)
+
+
+def _cleanup_date(ch, date_str: str) -> None:
+    """Supprime toute ligne Bronze portant cette _source_date.
+
+    Appelé AVANT chaque tentative de chargement, y compris la première :
+    - Premier run : aucune ligne à supprimer, opération no-op.
+    - Retry après crash partiel : nettoie les inserts qui avaient réussi
+      avant le plantage, évitant la duplication.
+
+    On utilise DELETE FROM (lightweight delete de ClickHouse ≥ 22.8) :
+    les lignes sont marquées supprimées immédiatement et invisibles aux
+    SELECT suivants, puis physiquement retirées lors du prochain merge.
+    mutations_sync=2 force l'attente de l'application effective pour
+    garantir qu'aucune ligne fantôme ne subsiste au moment du réinsert.
+    """
+    for table in _BRONZE_TABLES_PAR_DATE:
+        ch.command(
+            f"DELETE FROM {table} WHERE _source_date = {{d:Date}}",
+            parameters={"d": date_str},
+            settings={"mutations_sync": 2},
+        )
+
+
+def _cleanup_referentiels(ch) -> None:
+    """Vide les tables de référentiels avant réinsertion.
+
+    Les référentiels n'ont pas de _source_date : on tronque intégralement.
+    C'est sans risque parce qu'ils sont rechargés dans la foulée depuis
+    le lake, qui reste la source de vérité.
+    """
+    ch.command("TRUNCATE TABLE IF EXISTS bronze.services")
+    ch.command("TRUNCATE TABLE IF EXISTS bronze.cim10")
 
 
 def _already_loaded(ch, date_str: str) -> bool:
@@ -251,6 +305,11 @@ def load_bronze(ch, date_str: str) -> bool:
     meta.pipeline_runs, on ne fait rien. Sinon, on charge les 4 sources
     dans l'ordre, et on enregistre le résultat (succès ou erreur).
 
+    Cleanup préalable systématique : on supprime toutes les lignes déjà
+    présentes pour cette date (héritées d'un crash précédent) avant
+    d'insérer. C'est ce qui rend le pipeline sûr à relancer même après
+    un plantage entre deux inserts.
+
     Retourne True si de nouvelles données ont été chargées, False sinon.
     """
     if _already_loaded(ch, date_str):
@@ -258,6 +317,8 @@ def load_bronze(ch, date_str: str) -> bool:
         return False
 
     log.info(f"Bronze {date_str} : chargement en cours...")
+    # Cleanup obligatoire : purge un éventuel run partiel précédent.
+    _cleanup_date(ch, date_str)
     total_rows = 0
 
     try:
@@ -298,10 +359,21 @@ def load_referentiels(ch) -> None:
     On utilise 'referentiels' comme source_date dans meta.pipeline_runs
     (valeur sentinelle) pour réutiliser le même mécanisme de traçabilité
     que pour les dates quotidiennes.
+
+    Résilience : les deux tables sont vidées avant réinsertion
+    (_cleanup_referentiels) et la réussite n'est enregistrée qu'après
+    l'insert des DEUX fichiers. Un crash entre services et cim10 est
+    donc corrigé au prochain run par un rechargement complet.
     """
     if _already_loaded(ch, "referentiels"):
         log.info("Référentiels déjà chargés, ignorés.")
         return
     log.info("Chargement des référentiels...")
-    _load_referentiels(ch)
-    _record_run(ch, "referentiels", "success", 0)
+    _cleanup_referentiels(ch)
+    try:
+        _load_referentiels(ch)
+        _record_run(ch, "referentiels", "success", 0)
+    except Exception as exc:
+        _record_run(ch, "referentiels", "error", 0, str(exc))
+        log.error(f"Référentiels : erreur — {exc}")
+        raise
