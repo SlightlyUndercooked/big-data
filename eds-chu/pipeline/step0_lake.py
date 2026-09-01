@@ -29,12 +29,22 @@ from . import config
 
 
 def _pseudonymize(patient_id: str) -> str:
-    """HMAC-SHA256 déterministe : même patient_id → toujours même pseudo."""
+    """HMAC-SHA256 déterministe : même patient_id → toujours même pseudo.
+
+    Déterministe = le même patient_id produit toujours le même hash,
+    ce qui permet de faire des jointures entre tables (séjours ↔ patients)
+    sans jamais manipuler l'identifiant réel.
+    """
     return hmac.new(config.PIPELINE_SALT, patient_id.encode(), hashlib.sha256).hexdigest()
 
 
 def _normalize_sex(raw: str) -> str:
-    """Normalise le sexe en 'M' ou 'F'. '?' si valeur inconnue."""
+    """Normalise le sexe en 'M' ou 'F'. '?' si valeur inconnue.
+
+    Les sources hospitalières encodent le sexe de manières variées
+    ('M', 'MASCULIN', '1'...). On normalise ici pour éviter d'avoir
+    à gérer ces variantes dans toutes les couches suivantes.
+    """
     val = raw.strip().upper()
     if val in ("M", "MASCULIN", "MALE", "1"):
         return "M"
@@ -46,6 +56,10 @@ def _normalize_sex(raw: str) -> str:
 def _copy_patients(date_str: str) -> int:
     src = config.SOURCE_DIR / "patients" / date_str / "patients.csv"
     dst = config.LAKE_DIR  / "patients" / date_str / "patients.csv"
+
+    # Idempotence : si le fichier lake existe déjà, on ne le recrée pas.
+    # Cela garantit que la pseudonymisation n'est faite qu'une fois par date,
+    # et que le pipeline peut être relancé sans effet de bord.
     if dst.exists():
         return 0
 
@@ -54,7 +68,10 @@ def _copy_patients(date_str: str) -> int:
 
     with open(src, newline="") as fin, open(dst, "w", newline="") as fout:
         reader = csv.DictReader(fin)
-        # Colonnes de sortie : PII supprimées, birth_date réduite à birth_year
+        # Colonnes de sortie : PII supprimées, birth_date réduite à birth_year.
+        # La généralisation birth_date → birth_year réduit la précision
+        # juste assez pour empêcher la ré-identification, tout en conservant
+        # l'information utile pour les analyses démographiques (âge, cohortes).
         writer = csv.DictWriter(
             fout,
             fieldnames=["patient_pseudo", "birth_year", "sex", "region_code"],
@@ -63,7 +80,7 @@ def _copy_patients(date_str: str) -> int:
         for row in reader:
             writer.writerow({
                 "patient_pseudo": _pseudonymize(row["patient_id"]),
-                "birth_year":     int(row["birth_date"][:4]),
+                "birth_year":     int(row["birth_date"][:4]),  # "1985-03-12" → 1985
                 "sex":            _normalize_sex(row["sex"]),
                 "region_code":    row["region_code"].strip(),
                 # SUPPRIMÉS : patient_id, nom, prenom, nir, birth_date
@@ -84,8 +101,9 @@ def _copy_sejours(date_str: str) -> int:
 
     with open(src, newline="") as fin, open(dst, "w", newline="") as fout:
         reader = csv.DictReader(fin)
-        # patient_id remplacé par patient_pseudo (même sel que patients)
-        # → les jointures entre séjours et patients restent possibles en Silver
+        # patient_id remplacé par patient_pseudo avec le MÊME sel que pour patients.
+        # C'est ce qui rend les jointures possibles en Silver :
+        # HMAC(patient_id, sel) donne le même résultat dans les deux tables.
         writer = csv.DictWriter(
             fout,
             fieldnames=[
@@ -101,7 +119,7 @@ def _copy_sejours(date_str: str) -> int:
                 "patient_pseudo": _pseudonymize(row["patient_id"]),
                 "service_code":   row["service_code"],
                 "admission_ts":   row["admission_ts"],
-                "discharge_ts":   row["discharge_ts"],# vide si séjour en cuors
+                "discharge_ts":   row["discharge_ts"],  # vide si séjour en cours
                 "admission_mode": row["admission_mode"],
                 "discharge_mode": row["discharge_mode"],
             })
@@ -117,7 +135,10 @@ def _copy_diagnostics(date_str: str) -> int:
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)  # aucun PII dans les diagnostics (seulement stay_id)
+    # Copie brute : les diagnostics ne contiennent pas de PII (seulement stay_id).
+    # Le stay_id n'est pas un identifiant direct du patient — il ne permet pas
+    # de retrouver l'identité sans passer par la table séjours pseudonymisée.
+    shutil.copy2(src, dst)
 
     with open(dst) as f:
         return len(json.load(f))
@@ -130,19 +151,22 @@ def _copy_monitoring(date_str: str) -> int:
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)  # aucun PII (seulement stay_id)
+    # Copie brute : le monitoring ne contient que stay_id + constantes vitales.
+    # Pas de PII, pas de transformation nécessaire.
+    shutil.copy2(src, dst)
 
     t = pq.read_table(dst)
     return t.num_rows
 
 
 def copy_referentiels() -> None:
-    """Les référentiels sont déposés une seule fois (J0). Copie idempotente."""
+    """Les référentiels sont déposés une seule fois par le CHU (J0). Copie idempotente."""
     ref_src = config.SOURCE_DIR / "referentiels"
     ref_dst = config.LAKE_DIR  / "referentiels"
     ref_dst.mkdir(parents=True, exist_ok=True)
 
-    # On prend la date la plus ancienne disponible (référentiels déposés J0)
+    # On prend le dossier le plus ancien disponible dans la source
+    # (les référentiels sont déposés au jour J0, ils ne changent pas ensuite).
     date_dirs = sorted(ref_src.iterdir())
     if not date_dirs:
         return

@@ -33,6 +33,7 @@ def _sql_path(name: str) -> Path:
 
 
 def _exec_sql_file(ch, path: Path) -> None:
+    """Exécute un fichier SQL statement par statement (séparateur : ';')."""
     sql = path.read_text()
     no_comments = "\n".join(
         l for l in sql.splitlines() if not l.strip().startswith("--")
@@ -44,6 +45,23 @@ def _exec_sql_file(ch, path: Path) -> None:
 
 
 def build_gold(ch) -> None:
+    """Crée les deux schémas Gold (pilotage et recherche) avec leurs vues et KPI.
+
+    Gold est implémenté en VUES sur Silver (pas en tables).
+    Avantage : aucune duplication de données, les vues sont toujours fraîches.
+    Recréer les vues (CREATE OR REPLACE VIEW) est quasi-instantané.
+
+    Deux bases séparées pour le cloisonnement des droits :
+      - gold_pilotage  : opérationnels (direction, cadres de santé)
+                         → region_code disponible, toutes les données de séjour
+      - gold_recherche : chercheurs cliniques
+                         → region_code absent, stay_id absent de fact_diagnostic,
+                           toute cohorte < 5 patients supprimée (RGPD)
+
+    Dans Metabase, deux connexions distinctes pointent vers ces deux bases,
+    avec deux groupes d'utilisateurs : un opérationnel ne voit pas gold_recherche
+    et un chercheur ne voit pas gold_pilotage.
+    """
     log.info("Construction de la couche Gold (pilotage + recherche)...")
     _exec_sql_file(ch, _sql_path("gold_pilotage.sql"))
     log.info("  gold_pilotage : OK")

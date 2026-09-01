@@ -37,9 +37,9 @@ Remplir le formulaire :
 | **Display name** | `Pilotage hospitalier` |
 | **Host** | `clickhouse` ← nom du service Docker, **pas** `localhost` |
 | **Port** | `8123` |
-| **Database name** | `gold_pilotage` |
 | **Username** | `default` |
 | **Password** | *(laisser vide)* |
+| **Database name** | `gold_pilotage` |
 
 Cliquer **Save** puis attendre quelques secondes → **Sync database schema now**.
 
