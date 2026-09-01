@@ -30,8 +30,9 @@ def _sql_path() -> Path:
 
 def _exec_sql_file(ch, path: Path) -> None:
     """Exécute un fichier SQL statement par statement (séparateur : ';').
-    Supprime les commentaires AVANT le split : un ';' dans un commentaire
-    ne doit pas être interprété comme séparateur d'instruction.
+
+    Les commentaires sont supprimés avant le split pour éviter qu'un ';'
+    dans un commentaire soit interprété comme un séparateur d'instruction.
     """
     sql = path.read_text()
     no_comments = "\n".join(
@@ -44,6 +45,21 @@ def _exec_sql_file(ch, path: Path) -> None:
 
 
 def build_silver(ch) -> None:
+    """Reconstruit entièrement la couche Silver depuis Bronze.
+
+    Silver est recréée à chaque run avec CREATE OR REPLACE TABLE (atomique).
+    Ce choix est intentionnel : Silver n'accumule pas de données, elle transforme.
+    Reconstruire est rapide (<1s sur ce volume) et garantit qu'il n'y a jamais
+    de résidu d'un run précédent partiel ou raté.
+
+    Toute la logique métier est dans silver.sql :
+      - Déduplication des patients (argMax sur _source_date)
+      - Filtrage des séjours incohérents (discharge < admission)
+      - Calcul des réadmissions à 30 jours (fenêtre glissante SQL)
+      - Agrégation des alertes monitoring par séjour
+      - Enrichissement CIM-10 avec le chapitre (dérivé du 1er caractère)
+    Python ne fait qu'envoyer les requêtes — pas de pandas, pas de traitement en mémoire.
+    """
     log.info("Construction de la couche Silver...")
     _exec_sql_file(ch, _sql_path())
     log.info("Silver prête.")

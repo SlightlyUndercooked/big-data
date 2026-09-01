@@ -5,23 +5,52 @@
 -- Aucune transformation métier ici. Les PII ont déjà été supprimés
 -- dans le lake par step0_lake.py (pseudonymisation, suppression NIR/nom/prénom).
 --
--- Moteur ClickHouse choisi par table :
---   ReplacingMergeTree : pour les tables avec doublons potentiels (patients,
---     référentiels). Déduplique automatiquement lors des merges ClickHouse.
---     En Silver on force la dédup avec argMax() pour un résultat immédiat.
---   MergeTree classique : pour les tables sans doublons (séjours, diagnostics,
---     monitoring — confirmé à l'exploration des données).
+-- Pourquoi ClickHouse et pas PostgreSQL ?
+--   ClickHouse est une base de données COLONNE : les données sont stockées
+--   par colonne et non par ligne. Pour l'analytique (SELECT avg(duree_sejour)
+--   sur 15 000 séjours), ClickHouse ne lit que la colonne concernée au lieu
+--   de lire toutes les lignes entières. Gain de performance majeur + compression
+--   native très efficace sur les données répétitives (codes, dates, catégories).
 --
--- Traçabilité : chaque ligne porte _source_date (date du fichier) et
--- _ingested_at (horodatage de l'insertion dans ClickHouse).
+-- Moteur ClickHouse choisi par table :
+--   ReplacingMergeTree seulement pour les tables où les doublons sont confirmés
+--     par l'exploration des données (patients, référentiels). Le chu renvoie un
+--     dump complet chaque jour, les mêmes patients apparaissent dans plusieurs
+--     fichiers. ReplacingMergeTree déduplique sur la clé ORDER BY lors des merges.
+--     la déduplication n'est pas immédiate, elle attend le prochain
+--     merge automatique. Pour forcer une lecture dédupliquée immédiatement,
+--     il faut utiliserFINAL ou argMax()
+--   MergeTree classique : pour les tables sans doublons (séjours, diagnostics,
+--     monitoring confirmé à l'exploration : aucun stay_id commun entre les 3 jours).
+--
+--     ReplacingMergeTree consomme plus de cpu et de disque à
+--     l'insertion pour gérer la déduplication en arrière plan
+--
+-- Pourquoi _source_date sur chaque ligne ?
+--   Bronze mélange les données de 3 jours dans la même table. Sans _source_date,
+--   impossible de savoir de quel fichier vient une ligne, ni d'auditer le chargement.
+--   C'est aussi la clé de l'incrémentalité : meta.pipeline_runs trace les dates
+--   déjà chargées, et _source_date permet de vérifier la cohérence.
+--
+-- Principe fondamental : Bronze ne filtre rien.
+--   Les 136 séjours avec discharge < admission et les 1190 séjours en cours
+--   sont tous conservés. Filtrer en Bronze ferait perdre la traçabilité des
+--   anomalies — on ne pourrait plus auditer leur origine ni les corriger si
+--   le CHU envoie un fichier corrigé. Les filtres métier appartiennent à Silver.
 -- ===================================================================
 
 -- Base de traçabilité du pipeline
 CREATE DATABASE IF NOT EXISTS meta;
 
--- Suivi de chaque run : couche traitée, date source, statut, nb lignes
--- Permet de savoir ce qui a déjà été traité (logique incrémentale) et
--- de produire un audit trail conforme aux exigences de traçabilité RGPD.
+-- Suivi de chaque run : couche traitée, date source, statut, nb lignes.
+--
+-- Pourquoi cette table et pas un simple COUNT() sur bronze.patients ?
+--   Un COUNT() serait coûteux et peu fiable : si le chargement plante à mi-chemin,
+--   des lignes existent déjà et on ne saurait pas si la date est complète ou partielle.
+--   pipeline_runs est une table légère, indexée sur (layer, source_date), qui stocke
+--   explicitement le statut de chaque run. Un statut 'error' = réessaie au prochain run.
+--   Un statut 'success' = saute cette date. C'est aussi un audit trail RGPD :
+--   on sait exactement ce qui a été inséré, quand, et combien de lignes.
 CREATE TABLE IF NOT EXISTS meta.pipeline_runs (
     run_id         UUID     DEFAULT generateUUIDv4(),
     layer          String,                   -- 'bronze' | 'silver' | 'gold'
@@ -84,6 +113,25 @@ CREATE TABLE IF NOT EXISTS bronze.sejours (
 -- Structure source : [{"stay_id": "S00000001", "diagnostics": [...]}]
 -- Step1 déplie en Python : 1 ligne par (stay_id, code_cim10, type_diag).
 -- Un séjour peut avoir plusieurs diagnostics (principal + associés).
+--
+-- Pourquoi le dépliage en Python et pas en SQL ?
+--   ClickHouse peut parser du JSON mais le faire en Python est plus lisible
+--   et plus simple à maintenir. La double boucle Python (séjour → diagnostics)
+--   est naturelle pour aplatir cette structure imbriquée. Le résultat inséré
+--   est déjà au bon grain pour toutes les couches suivantes : 1 ligne = 1 code.
+--
+--   MergeTree est le moteur de base de ClickHouse : il stocke les données triées
+--   sur disque et les fusionne en arrière-plan pour optimiser les lectures.
+--   Pas de gestion des doublons. On choisit MergeTree au lieu deReplacingMergeTree
+--   parce que l'exploration des données confirme qu'il n'y a aucun doublon
+--   dans les diagnostics entre les 3 jours : chaque (stay_id, code_cim10, type_diag)
+--   n'apparaît qu'une seule fois.
+--
+-- ORDER BY (stay_id, code_cim10, type_diag) définit l'ordre de stockage physique sur disque l'équivalent d'un index primaire
+--   intégré dans la structure de stockage. Les requêtes typiques sur les diagnostics
+--   filtrent toujours par séjour en premier (WHERE stay_id = ...), puis éventuellement
+--   par code ou type. ClickHouse sait alors exactement dans quel bloc chercher
+--   sans scanner toute la table.
 CREATE TABLE IF NOT EXISTS bronze.diagnostics (
     stay_id      String,
     code_cim10   String,
@@ -101,6 +149,13 @@ CREATE TABLE IF NOT EXISTS bronze.diagnostics (
 -- par patient (filtre sur stay_id) ou par tranche horaire (filtre sur ts).
 -- Les valeurs hors plage physiologique sont détectées en Silver
 -- (on ne filtre pas en Bronze pour conserver la traçabilité des anomalies).
+--
+-- Pourquoi insert_arrow pour cette table (et pas les autres) ?
+--   Le fichier source est en Parquet. PyArrow le lit nativement en mémoire
+--   sous forme de Table Arrow. insert_arrow envoie cette table directement
+--   à ClickHouse via le protocole binaire natif, sans conversion intermédiaire
+--   vers des listes Python. C'est la méthode la plus rapide pour les gros volumes.
+--   Les CSV n'ont pas d'équivalent natif Arrow → on passe par des listes Python.
 CREATE TABLE IF NOT EXISTS bronze.monitoring (
     stay_id      String,
     ts           DateTime,

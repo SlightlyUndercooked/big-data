@@ -37,7 +37,12 @@ log = logging.getLogger(__name__)
 
 
 def _discover_source_dates() -> list[str]:
-    """Trouve toutes les dates disponibles dans SOURCE_DIR/patients/."""
+    """Trouve toutes les dates disponibles dans SOURCE_DIR/patients/.
+
+    On utilise patients/ comme source de vérité pour la liste des dates :
+    c'est la table principale, et chaque date doit avoir un dossier patients/.
+    Les dates sont triées pour garantir un chargement chronologique.
+    """
     patients_dir = config.SOURCE_DIR / "patients"
     if not patients_dir.exists():
         raise FileNotFoundError(f"Dossier source introuvable : {patients_dir}")
@@ -45,6 +50,7 @@ def _discover_source_dates() -> list[str]:
 
 
 def _get_client():
+    """Crée et retourne une connexion ClickHouse via HTTP (port 8123)."""
     return clickhouse_connect.get_client(
         host=config.CLICKHOUSE_HOST,
         port=config.CLICKHOUSE_PORT,
@@ -62,25 +68,30 @@ def run() -> None:
 
     ch = _get_client()
 
-    # Initialisation du schéma Bronze (idempotent)
+    # Initialisation du schéma Bronze : crée les bases et tables si elles
+    # n'existent pas encore. Utilise IF NOT EXISTS partout → idempotent.
     init_bronze(ch)
 
-    # Référentiels (services, CIM-10)
+    # Les référentiels (services, CIM-10) sont déposés une seule fois par le CHU.
+    # copy_referentiels copie vers le lake, load_referentiels insère dans Bronze.
+    # Les deux opérations sont idempotentes : rejouer ne double pas les données.
     copy_referentiels()
     load_referentiels(ch)
 
-    # Traitement incrémental par date
+    # Traitement incrémental par date, dans l'ordre chronologique.
     dates = _discover_source_dates()
     log.info(f"Dates source : {dates}")
 
     new_dates = []
     for date_str in dates:
-        # Step 0 : copie + pseudonymisation vers le lake (idempotent)
+        # Step 0 : pseudonymisation + copie vers le lake.
+        # Idempotent : si les fichiers lake existent déjà, rien n'est refait.
         counts = copy_date_to_lake(date_str)
         if any(v > 0 for v in counts.values()):
             log.info(f"Lake {date_str} : {counts}")
 
-        # Step 1 : chargement Bronze (saute si déjà fait)
+        # Step 1 : chargement Bronze.
+        # Vérifie meta.pipeline_runs → saute la date si déjà en 'success'.
         loaded = load_bronze(ch, date_str)
         if loaded:
             new_dates.append(date_str)
@@ -90,10 +101,11 @@ def run() -> None:
     else:
         log.info("Aucune nouvelle date en Bronze.")
 
-    # Silver et Gold sont toujours reconstruits : Silver est une transformation
-    # complète de Bronze, pas une accumulation. Reconstruire est idempotent,
-    # rapide (<1s sur ce volume), et garantit la cohérence même si un run
-    # précédent a échoué à mi-chemin.
+    # Silver et Gold sont TOUJOURS reconstruits, même si Bronze n'a pas changé.
+    # Raison : Silver et Gold ne sont pas incrémentaux, ils sont recalculés
+    # depuis zéro à chaque run (CREATE OR REPLACE). C'est rapide (<1s ici)
+    # et garantit la cohérence totale même si un run précédent a planté
+    # après Bronze mais avant Silver.
     build_silver(ch)
     build_gold(ch)
 
