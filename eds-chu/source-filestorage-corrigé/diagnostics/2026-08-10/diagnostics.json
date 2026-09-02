@@ -1,0 +1,2854 @@
+[
+ {
+  "stay_id": "S00000019",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000053",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000116",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000123",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000178",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000241",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000284",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000300",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000356",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000362",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000366",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000386",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000433",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000448",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000457",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000459",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000483",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000514",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000515",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000585",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000637",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000645",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000673",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000675",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000810",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000813",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000834",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000854",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000938",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00000962",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001027",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001035",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001044",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001083",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001103",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001144",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001148",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001161",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001168",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001193",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001231",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001240",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001242",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001289",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001324",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001351",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001388",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001407",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001441",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001474",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001507",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001547",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001557",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001579",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001633",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001637",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001674",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001712",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001716",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001741",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001752",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001797",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001844",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001880",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001886",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00001924",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002057",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002072",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002093",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002127",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002147",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002152",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002157",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002158",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002172",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002198",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002205",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002320",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002322",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002351",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002401",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002428",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002449",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002460",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002472",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002483",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002484",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002503",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002538",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002540",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002562",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002606",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002612",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002616",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002680",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002782",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002804",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002806",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002891",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002893",
+  "diagnostics": [
+   {
+    "code_cim10": "J44",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002901",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002907",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002935",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002936",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002952",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00002999",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003030",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003033",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003059",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003073",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003172",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003175",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003182",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003205",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003224",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003280",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003283",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003312",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003353",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003421",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003422",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003441",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003444",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003477",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003543",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003561",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003578",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003580",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003595",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003675",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003694",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003809",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003810",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003861",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003875",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003931",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003935",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00003976",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004007",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004008",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004009",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004020",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004037",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004043",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004064",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004091",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004097",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004205",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004206",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004284",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004287",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004308",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004383",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004428",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004441",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004452",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004533",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004535",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004551",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004569",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004593",
+  "diagnostics": [
+   {
+    "code_cim10": "J44",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004604",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004620",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004674",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004706",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004755",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004809",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004846",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004872",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004887",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004909",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004911",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004936",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004937",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00004966",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005021",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005036",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005052",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005092",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005097",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005119",
+  "diagnostics": [
+   {
+    "code_cim10": "J44",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005133",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005162",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005199",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005239",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005248",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005270",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005273",
+  "diagnostics": [
+   {
+    "code_cim10": "J44",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005276",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005292",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005310",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005361",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005437",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005560",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005619",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005686",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005702",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005715",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005719",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005737",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005783",
+  "diagnostics": [
+   {
+    "code_cim10": "C34",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005802",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005821",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005826",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005871",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005882",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005910",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00005921",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006039",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006052",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006065",
+  "diagnostics": [
+   {
+    "code_cim10": "I63",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006078",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006103",
+  "diagnostics": [
+   {
+    "code_cim10": "F32",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006147",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006239",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006338",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006349",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006358",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006474",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006478",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006492",
+  "diagnostics": [
+   {
+    "code_cim10": "I50",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006513",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006519",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006574",
+  "diagnostics": [
+   {
+    "code_cim10": "E11",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "N39",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006593",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006626",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006633",
+  "diagnostics": [
+   {
+    "code_cim10": "J18",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006695",
+  "diagnostics": [
+   {
+    "code_cim10": "I21",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006697",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "E11",
+    "type": "associe"
+   },
+   {
+    "code_cim10": "I50",
+    "type": "associe"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006728",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006751",
+  "diagnostics": [
+   {
+    "code_cim10": "N39",
+    "type": "principal"
+   }
+  ]
+ },
+ {
+  "stay_id": "S00006764",
+  "diagnostics": [
+   {
+    "code_cim10": "K35",
+    "type": "principal"
+   },
+   {
+    "code_cim10": "J44",
+    "type": "associe"
+   }
+  ]
+ }
+]

@@ -81,6 +81,11 @@ def _copy_patients(date_str: str) -> int:
     src = config.SOURCE_DIR / "patients" / date_str / "patients.csv"
     dst = config.LAKE_DIR  / "patients" / date_str / "patients.csv"
 
+    # Toutes les tables ne sont pas déposées chaque jour
+    # Fichier source absent = rien à copier pour cette table à cette date.
+    if not src.exists():
+        return 0
+
     # Idempotence : si le fichier lake existe déjà, on ne le recrée pas.
     # Cela garantit que la pseudonymisation n'est faite qu'une fois par date,
     # et que le pipeline peut être relancé sans effet de bord.
@@ -121,7 +126,7 @@ def _copy_patients(date_str: str) -> int:
 def _copy_sejours(date_str: str) -> int:
     src = config.SOURCE_DIR / "sejours" / date_str / "sejours.csv"
     dst = config.LAKE_DIR  / "sejours" / date_str / "sejours.csv"
-    if dst.exists():
+    if not src.exists() or dst.exists():
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +166,7 @@ def _copy_sejours(date_str: str) -> int:
 def _copy_diagnostics(date_str: str) -> int:
     src = config.SOURCE_DIR / "diagnostics" / date_str / "diagnostics.json"
     dst = config.LAKE_DIR  / "diagnostics" / date_str / "diagnostics.json"
-    if dst.exists():
+    if not src.exists() or dst.exists():
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -177,7 +182,7 @@ def _copy_diagnostics(date_str: str) -> int:
 def _copy_monitoring(date_str: str) -> int:
     src = config.SOURCE_DIR / "monitoring" / date_str / "monitoring.parquet"
     dst = config.LAKE_DIR  / "monitoring" / date_str / "monitoring.parquet"
-    if dst.exists():
+    if not src.exists() or dst.exists():
         return 0
 
     dst.parent.mkdir(parents=True, exist_ok=True)

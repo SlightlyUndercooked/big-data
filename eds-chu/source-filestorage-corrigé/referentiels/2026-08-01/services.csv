@@ -1,0 +1,9 @@
+service_code,service_label
+CARDIO,Cardiologie
+URGENCES,Urgences
+PNEUMO,Pneumologie
+NEURO,Neurologie
+ONCO,Oncologie
+PEDIA,Pediatrie
+CHIR,Chirurgie
+REA,Reanimation

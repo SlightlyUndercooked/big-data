@@ -39,16 +39,27 @@ log = logging.getLogger(__name__)
 
 
 def _discover_source_dates() -> list[str]:
-    """Trouve toutes les dates disponibles dans SOURCE_DIR/patients/.
+    """Trouve toutes les dates disponibles, toutes tables confondues.
 
-    On utilise patients/ comme source de vérité pour la liste des dates :
-    c'est la table principale, et chaque date doit avoir un dossier patients/.
+    Union des dates présentes dans patients/, sejours/, diagnostics/ et
+    monitoring/ : les tables ne couvrent pas forcément les mêmes périodes
+    (ex: patients déposé en photo complète sur les derniers jours seulement,
+    alors que l'historique d'activité remonte plus loin). Une date est
+    traitée dès qu'au moins une table a des données pour elle ; les fichiers
+    manquants pour les autres tables sont simplement ignorés (step0/step1).
     Les dates sont triées pour garantir un chargement chronologique.
     """
-    patients_dir = config.SOURCE_DIR / "patients"
-    if not patients_dir.exists():
-        raise FileNotFoundError(f"Dossier source introuvable : {patients_dir}")
-    return sorted(p.name for p in patients_dir.iterdir() if p.is_dir())
+    tables = ("patients", "sejours", "diagnostics", "monitoring")
+    dates: set[str] = set()
+    for table in tables:
+        table_dir = config.SOURCE_DIR / table
+        if table_dir.exists():
+            dates.update(p.name for p in table_dir.iterdir() if p.is_dir())
+    if not dates:
+        raise FileNotFoundError(
+            f"Aucune date trouvée dans {config.SOURCE_DIR} (dossiers {tables})"
+        )
+    return sorted(dates)
 
 
 def _get_client():
@@ -105,8 +116,8 @@ def run() -> None:
 
     # Silver et Gold sont TOUJOURS reconstruits, même si Bronze n'a pas changé.
     # Raison : Silver et Gold ne sont pas incrémentaux, ils sont recalculés
-    # depuis zéro à chaque run (CREATE OR REPLACE). C'est rapide (<1s ici)
-    # et garantit la cohérence totale même si un run précédent a planté
+    # depuis zéro à chaque run (CREATE OR REPLACE)
+    # ça garantit la cohérence même si un run précédent a planté
     # après Bronze mais avant Silver.
     build_silver(ch)
     build_gold(ch)

@@ -165,6 +165,10 @@ def _record_run(ch, date_str: str, status: str, rows: int, error: str = "") -> N
 
 def _load_patients(ch, date_str: str) -> int:
     lake_file = config.LAKE_DIR / "patients" / date_str / "patients.csv"
+    # Fichier absent = la table n'a pas été déposée pour cette date
+    # (cf. step0 : toutes les tables ne couvrent pas les mêmes périodes).
+    if not lake_file.exists():
+        return 0
     rows = []
     # On convertit date_str en objet date Python pour que ClickHouse reçoive
     # le bon type (Date32) et non une chaîne à parser côté serveur.
@@ -190,6 +194,8 @@ def _load_patients(ch, date_str: str) -> int:
 
 def _load_sejours(ch, date_str: str) -> int:
     lake_file = config.LAKE_DIR / "sejours" / date_str / "sejours.csv"
+    if not lake_file.exists():
+        return 0
     rows = []
     src_date = date.fromisoformat(date_str)
 
@@ -230,6 +236,8 @@ def _load_sejours(ch, date_str: str) -> int:
 
 def _load_diagnostics(ch, date_str: str) -> int:
     lake_file = config.LAKE_DIR / "diagnostics" / date_str / "diagnostics.json"
+    if not lake_file.exists():
+        return 0
     rows = []
     src_date = date.fromisoformat(date_str)
 
@@ -259,6 +267,8 @@ def _load_diagnostics(ch, date_str: str) -> int:
 
 def _load_monitoring(ch, date_str: str) -> int:
     lake_file = config.LAKE_DIR / "monitoring" / date_str / "monitoring.parquet"
+    if not lake_file.exists():
+        return 0
     src_date = date.fromisoformat(date_str)
 
     # PyArrow lit le Parquet nativement en mémoire sous forme de Table Arrow.
