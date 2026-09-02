@@ -1,3 +1,4 @@
 clickhouse-connect>=0.7
 python-dotenv>=1.0
 pyarrow>=14.0
+requests>=2.31

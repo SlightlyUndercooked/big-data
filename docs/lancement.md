@@ -84,6 +84,13 @@ Voir le guide dédié : **[docs/metabase.md](metabase.md)**
 
 Il couvre : création du compte admin, ajout des deux connexions ClickHouse, groupes d'utilisateurs, permissions, et dépannage du driver ClickHouse.
 
+Une fois le compte admin créé (et ses identifiants renseignés dans `.env`),
+les connexions, questions et dashboards se créent automatiquement :
+
+```bash
+python -m pipeline.metabase_setup
+```
+
 ---
 
 ## Vérifier que tout fonctionne

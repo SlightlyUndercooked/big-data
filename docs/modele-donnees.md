@@ -58,8 +58,8 @@ Le grain « un séjour » est le plus naturel pour le pilotage hospitalier : tou
 | `admission_mode` | String | urgence / programme / mutation | Dénormalisé dans la fact — valeurs peu nombreuses, stables, pas une dimension à part entière |
 | `discharge_mode` | String | domicile / mutation / transfert / deces / NULL | Idem |
 | `duree_sejour_jours` | Float | Calculé en Silver : `discharge_ts - admission_ts` | Pré-calculé pour éviter le recalcul à chaque requête dashboard |
-| `is_readmission_30j` | Bool | Vrai si sortie récente dans les 30j avant cette admission | Calculé en Silver par fenêtre glissante (`lagInFrame`) sur `patient_pseudo` |
-| `nb_alertes_monitoring` | Int | Nb de relevés hors plage physiologique sur ce séjour | Agrégé pour éviter d'exposer le flux brut (millions de lignes) dans Gold |
+| `is_readmission_30j` | Bool | Vrai si sortie précédente du patient entre 1 et 30j avant cette admission | RÈGLE MÉTIER calculée en **Gold** (vue `gold_pilotage.fact_sejour`) par fenêtre glissante (`lagInFrame`) sur `patient_pseudo` — Silver ne fait que le nettoyage |
+| `nb_alertes_monitoring` | Int | Nb de relevés du séjour franchissant au moins un seuil clinique | RÈGLE MÉTIER calculée en **Gold** (seuils : SpO2 < 92, FC < 50 ou > 100, Temp > 38,5) |
 
 #### `fact_monitoring`
 
@@ -74,7 +74,12 @@ Table de faits **sans dimension** — elle expose le flux brut de constantes vit
 | `heart_rate` | Float | Fréquence cardiaque (bpm) |
 | `spo2` | Float | Saturation en oxygène (%) |
 | `temp_c` | Float | Température corporelle (°C) |
-| `is_alerte` | UInt8 | 1 si au moins une constante sort de la plage physiologique normale |
+| `alerte_desaturation` | UInt8 | 1 si SpO2 < 92 % (seuil clinique, défini en Gold) |
+| `alerte_brady_tachycardie` | UInt8 | 1 si FC < 50 ou > 100 bpm (seuil clinique, défini en Gold) |
+| `alerte_fievre` | UInt8 | 1 si température > 38,5 °C (seuil clinique, défini en Gold) |
+| `is_alerte` | UInt8 | 1 si au moins un seuil clinique est franchi |
+
+> Deux notions distinctes : en **Silver**, les plages de plausibilité (FC 20-250, SpO2 50-100, Temp 30-45) servent à ÉCARTER les relevés aberrants (capteurs en panne, valeurs sentinelles). En **Gold**, les seuils cliniques ci-dessus QUALIFIENT chaque relevé valide. Le nettoyage est une règle qualité (Silver), l'alerte est une règle métier (Gold).
 
 > Pourquoi sans dimension ? Le monitoring est un flux continu — des millions de lignes sur quelques jours. Les dimensions temporelles (date, heure) s'extraient directement des colonnes `ts` / `date_mesure` via des fonctions ClickHouse, sans table de jointure. La jointure vers `fact_sejour` se fait via `stay_id` si une analyse croisée est nécessaire. Créer une dimension `dim_constantes` n'aurait pas de sens : il n'y a rien à enrichir — les noms de capteurs sont fixes et peu nombreux.
 
@@ -110,7 +115,7 @@ Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés)
 | `code_cim10` | String | FK → dim_pathologie | Pivot vers le libellé et la hiérarchie CIM-10 |
 | `date_admission` | Date | FK → dim_temps | Date d'entrée du séjour — situe le diagnostic dans le temps |
 | `age_au_diagnostic` | Int | Âge du patient au diagnostic | Calculé en Silver : `toYear(date_admission) - birth_year`. Le diagnostic n'ayant pas de date propre dans la source, la date d'admission du séjour sert de référence |
-| `type_diag` | String | principal / associe | Crucial : la prévalence se mesure sur les diagnostics principaux uniquement |
+| `type_diag` | String | principal / associe | La prévalence compte tous les types (un patient porteur d'une pathologie appartient à la cohorte, que le diagnostic soit principal ou associé) ; la colonne permet de restreindre au principal si une étude l'exige |
 | `service_code` | String | Service lors du diagnostic | Dénormalisé pour éviter une dépendance entre les schémas Gold |
 
 #### `dim_patient` (partagée)
@@ -158,8 +163,9 @@ sejours.csv        ──[contrôles qualité Silver]─────────
 
 diagnostics.json   ──[dépliage JSON, 1 ligne/code]──────────► fact_diagnostic
 
-monitoring.parquet ──[agrégation : COUNT hors plage]─────────► fact_sejour.nb_alertes_monitoring
-                   ──[flux brut ligne par ligne]──────────────► fact_monitoring (sans dimension)
+monitoring.parquet ──[nettoyage Silver : aberrants écartés]──► fact_monitoring (sans dimension)
+                      puis [seuils cliniques appliqués en Gold : flags alerte
+                            + agrégat fact_sejour.nb_alertes_monitoring]
 
 referentiels/      ──[chargement direct]─────────────────────► dim_service, dim_pathologie
 ```

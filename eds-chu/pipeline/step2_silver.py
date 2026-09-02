@@ -14,13 +14,17 @@ la même date source).
 Contrôles qualité appliqués en SQL Silver (cf. sql/silver.sql) :
   - patients : déduplication par argMax(_source_date), filtre sex IN ('M','F')
   - séjours : écart si discharge_ts < admission_ts (136 cas détectés)
-  - monitoring : comptage des alertes hors plage physiologique par séjour
+  - monitoring : écart des relevés hors plage physiologique (données aberrantes,
+                 capteurs en panne) — les SEUILS CLINIQUES d'alerte sont une
+                 règle métier définie en Gold, pas ici
   - diagnostics : inner join avec séjours valides (écarte les diagnostics orphelins)
                   + calcul de l'âge au diagnostic (année admission - birth_year)
-  - réadmissions: calcul par fenêtre glissante (lagInFrame) en SQL ClickHouse
 
-Les tables intermédiaires internes à Silver portent le suffixe _stg
-(sejours_stg, monitoring_alertes_stg) : elles ne sont pas exposées en Gold.
+La réadmission à 30 jours est aussi une règle métier : calculée en Gold
+(gold_pilotage.fact_sejour), pas en Silver.
+
+La table intermédiaire interne à Silver porte le suffixe _stg
+(sejours_stg) : elle n'est pas exposée en Gold.
 """
 import logging
 from pathlib import Path
