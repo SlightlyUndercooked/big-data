@@ -1,11 +1,6 @@
 services:
 
-  # ---------------------------------------------------------------
-  # ClickHouse — entrepôt colonne, moteur de toutes les transformations
-  # ---------------------------------------------------------------
-  # Port 8123 : interface HTTP (utilisée par clickhouse-connect Python et Metabase)
-  # Port 9000 : protocole natif (client CLI clickhouse-client)
-  # Interface SQL intégrée : http://localhost:8123/play
+  # HTTP 8123 (pipeline + Metabase), natif 9000, play : http://localhost:8123/play
   clickhouse:
     image: clickhouse/clickhouse-server:24.10
     ports:
@@ -15,9 +10,8 @@ services:
       - clickhouse_data:/var/lib/clickhouse
     environment:
       CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}   # vide en dev local
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
     ulimits:
-      # Requis par ClickHouse pour gérer de nombreux fichiers simultanément
       nofile:
         soft: 262144
         hard: 262144
@@ -27,24 +21,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------
-  # Metabase — dashboards, cloisonnement des droits
-  # ---------------------------------------------------------------
-  # Accès : http://localhost:3001  (3000 réservé au portfolio)
-  #
-  # Pré-requis : télécharger le driver ClickHouse pour Metabase
-  # et le placer dans ./metabase-plugins/
-  #
-  # Driver officiel :
-  #   https://github.com/ClickHouse/metabase-clickhouse-driver/releases
-  #   → télécharger clickhouse.metabase-driver.jar (dernière version)
-  #   → le placer dans eds-chu/metabase-plugins/
-  #
-  # Connexion ClickHouse dans Metabase :
-  #   Host: clickhouse  (nom du service Docker, pas localhost)
-  #   Port: 8123
-  #   Database: default
-  #   User: default
+  # http://localhost:3001
+  # Driver ClickHouse : ./metabase-plugins/clickhouse.metabase-driver.jar
+  # Connexions : python -m pipeline.metabase_setup
+  #   host = clickhouse (réseau Docker, pas localhost)
+  #   comptes eds_pilotage / eds_recherche — pas default
   metabase:
     image: metabase/metabase:v0.53.4
     ports:

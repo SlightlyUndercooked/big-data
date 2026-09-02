@@ -9,6 +9,9 @@
 -- Petits effectifs : k ≥ 5 patients distincts, à la fois sur les vues
 -- agrégées (HAVING) et sur fact_diagnostic (sinon un chercheur
 -- réagrège la table brute et contourne le HAVING).
+--
+-- Les vues KPI lisent gold_recherche.fact_diagnostic, pas Silver.
+-- Exception : v_comorbidites (stay_id nécessaire, non exposé en Gold).
 -- ===================================================================
 
 CREATE DATABASE IF NOT EXISTS gold_recherche;
@@ -62,8 +65,8 @@ AS SELECT
     p.chapitre,
     count(DISTINCT d.patient_pseudo) AS nb_patients,
     count()                          AS nb_occurrences
-FROM silver.fact_diagnostic d
-LEFT JOIN silver.dim_pathologie p ON d.code_cim10 = p.code_cim10
+FROM gold_recherche.fact_diagnostic d
+LEFT JOIN gold_recherche.dim_pathologie p ON d.code_cim10 = p.code_cim10
 GROUP BY d.code_cim10, p.libelle, p.chapitre
 HAVING count(DISTINCT d.patient_pseudo) >= 5
 ORDER BY nb_patients DESC;
@@ -76,14 +79,14 @@ ORDER BY nb_patients DESC;
 CREATE OR REPLACE VIEW gold_recherche.v_prevalence_mensuelle
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
-    toStartOfMonth(d.date_admission) AS mois,
+    d.mois_admission                     AS mois,
     d.code_cim10,
     p.libelle,
     p.chapitre,
     count(DISTINCT d.patient_pseudo) AS nb_patients,
     count()                          AS nb_occurrences
-FROM silver.fact_diagnostic d
-LEFT JOIN silver.dim_pathologie p ON d.code_cim10 = p.code_cim10
+FROM gold_recherche.fact_diagnostic d
+LEFT JOIN gold_recherche.dim_pathologie p ON d.code_cim10 = p.code_cim10
 GROUP BY mois, d.code_cim10, p.libelle, p.chapitre
 HAVING count(DISTINCT d.patient_pseudo) >= 5
 ORDER BY mois, nb_patients DESC;
@@ -102,9 +105,9 @@ AS SELECT
     d.age_au_diagnostic DIV 10 * 10           AS tranche_age_debut,
     d.age_au_diagnostic DIV 10 * 10 + 9       AS tranche_age_fin,
     count(DISTINCT d.patient_pseudo)          AS nb_patients
-FROM silver.fact_diagnostic d
-LEFT JOIN silver.dim_patient    p    ON d.patient_pseudo = p.patient_pseudo
-LEFT JOIN silver.dim_pathologie path ON d.code_cim10 = path.code_cim10
+FROM gold_recherche.fact_diagnostic d
+LEFT JOIN gold_recherche.dim_patient    p    ON d.patient_pseudo = p.patient_pseudo
+LEFT JOIN gold_recherche.dim_pathologie path ON d.code_cim10 = path.code_cim10
 GROUP BY
     d.code_cim10,
     path.libelle,
@@ -117,7 +120,9 @@ ORDER BY d.code_cim10, tranche_age_debut;
 -- -----------------------------------------------------------------
 -- KPI 3 : Comorbidités (principal × associé, même stay_id)
 -- -----------------------------------------------------------------
--- stay_id sert de clé interne, absent du résultat.
+-- Exception : gold.fact_diagnostic n'a pas stay_id (minimisation).
+-- La paire se joue au séjour, pas au mois : on joint Silver en interne
+-- (DEFINER). stay_id n'apparaît pas dans le résultat.
 -- HAVING ≥ 5 : une paire rare est plus identifiante qu'un code isolé.
 CREATE OR REPLACE VIEW gold_recherche.v_comorbidites
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
@@ -131,8 +136,8 @@ AS SELECT
 FROM silver.fact_diagnostic princ
 INNER JOIN silver.fact_diagnostic asso
     ON princ.stay_id = asso.stay_id
-LEFT JOIN silver.dim_pathologie lib_princ ON princ.code_cim10 = lib_princ.code_cim10
-LEFT JOIN silver.dim_pathologie lib_asso  ON asso.code_cim10  = lib_asso.code_cim10
+LEFT JOIN gold_recherche.dim_pathologie lib_princ ON princ.code_cim10 = lib_princ.code_cim10
+LEFT JOIN gold_recherche.dim_pathologie lib_asso  ON asso.code_cim10  = lib_asso.code_cim10
 WHERE princ.type_diag = 'principal'
   AND asso.type_diag  = 'associe'
 GROUP BY

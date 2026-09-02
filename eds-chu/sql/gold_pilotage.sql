@@ -7,6 +7,8 @@
 -- region_code est dénormalisé dans fact_sejour (attribut d'admission,
 -- pas un attribut stable du patient).
 --
+-- Les FACTS lisent Silver. Les vues KPI ne lisent que Gold.
+--
 -- SQL SECURITY DEFINER : par défaut une vue s'exécute avec les droits
 -- de l'appelant. eds_pilotage n'a aucun droit sur silver. DEFINER
 -- exécute la vue avec les droits du créateur (admin pipeline) : la
@@ -29,23 +31,45 @@ DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT * FROM silver.dim_service;
 
 
+-- Seuils cliniques (Silver n'a fait que la plausibilité) :
+--   SpO2 < 92 | FC < 50 ou > 100 | Temp > 38,5
+-- is_alerte = au moins un des trois.
+-- service_code via INNER JOIN : un relevé dont le séjour a été écarté
+-- en Silver n'entre pas dans le mart.
+CREATE OR REPLACE VIEW gold_pilotage.fact_monitoring
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    m.stay_id,
+    s.service_code,
+    m.ts,
+    m.date_mesure,
+    m.heart_rate,
+    m.spo2,
+    m.temp_c,
+    toUInt8(m.spo2 < 92) AS alerte_desaturation,
+    toUInt8(m.heart_rate < 50 OR m.heart_rate > 100) AS alerte_brady_tachycardie,
+    toUInt8(m.temp_c > 38.5) AS alerte_fievre,
+    toUInt8(
+        m.spo2 < 92
+        OR m.heart_rate < 50 OR m.heart_rate > 100
+        OR m.temp_c > 38.5
+    ) AS is_alerte
+FROM silver.fact_monitoring m
+INNER JOIN silver.fact_sejour s ON m.stay_id = s.stay_id;
+
 -- region_code dénormalisé depuis silver.dim_patient.
 -- is_readmission_30j : lagInFrame, fenêtre 1–30 jours (le même jour =
 -- mutation, pas une réadmission).
--- nb_alertes_monitoring : relevés du séjour au-dessus d'un seuil clinique
--- (définition dans fact_monitoring ci-dessous).
+-- nb_alertes_monitoring : SUM(is_alerte) sur fact_monitoring (un seul
+-- endroit où les seuils sont écrits).
 CREATE OR REPLACE VIEW gold_pilotage.fact_sejour
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS
 WITH alertes_par_sejour AS (
     SELECT
         stay_id,
-        countIf(
-            spo2 < 92
-            OR heart_rate < 50 OR heart_rate >100
-            OR temp_c > 38.5
-        ) AS nb_alertes_monitoring
-    FROM silver.fact_monitoring
+        sum(is_alerte) AS nb_alertes_monitoring
+    FROM gold_pilotage.fact_monitoring
     GROUP BY stay_id
 )
 SELECT
@@ -74,28 +98,6 @@ WINDOW w AS (
     ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 );
 
--- Seuils cliniques (Silver n'a fait que la plausibilité) :
---   SpO2 < 92 | FC < 50 ou > 100 | Temp > 38,5
--- is_alerte = au moins un des trois.
-CREATE OR REPLACE VIEW gold_pilotage.fact_monitoring
-DEFINER = CURRENT_USER SQL SECURITY DEFINER
-AS SELECT
-    stay_id,
-    ts,
-    date_mesure,
-    heart_rate,
-    spo2,
-    temp_c,
-    toUInt8(spo2 < 92) AS alerte_desaturation,
-    toUInt8(heart_rate < 50 OR heart_rate > 100) AS alerte_brady_tachycardie,
-    toUInt8(temp_c > 38.5) AS alerte_fievre,
-    toUInt8(
-        spo2 < 92
-        OR heart_rate < 50 OR heart_rate > 100
-        OR temp_c > 38.5
-    ) AS is_alerte
-FROM silver.fact_monitoring;
-
 -- -----------------------------------------------------------------
 -- KPI 1 : Durée Moyenne de Séjour (DMS) par service
 -- -----------------------------------------------------------------
@@ -107,8 +109,8 @@ AS SELECT
     round(avg(f.duree_sejour_jours), 1) AS dms_jours,
     count()                             AS nb_sejours_termines,
     countIf(f.duree_sejour_jours > 30)  AS nb_longs_sejours
-FROM silver.fact_sejour f
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
+FROM gold_pilotage.fact_sejour f
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
 WHERE f.date_sortie IS NOT NULL
 GROUP BY f.service_code, s.service_label
 ORDER BY dms_jours DESC;
@@ -126,8 +128,8 @@ AS SELECT
     round(avg(f.duree_sejour_jours), 1) AS dms_jours,
     count()                             AS nb_sejours_termines,
     countIf(f.duree_sejour_jours > 30)  AS nb_longs_sejours
-FROM silver.fact_sejour f
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
+FROM gold_pilotage.fact_sejour f
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
 WHERE f.date_sortie IS NOT NULL
 GROUP BY mois, f.service_code, s.service_label
 ORDER BY mois, dms_jours DESC;
@@ -144,7 +146,7 @@ AS SELECT
     count()                              AS nb_passages,
     countIf(discharge_mode = 'deces')    AS nb_deces,
     countIf(discharge_mode = 'mutation') AS nb_mutations_sortantes
-FROM silver.fact_sejour
+FROM gold_pilotage.fact_sejour
 WHERE service_code = 'URGENCES'
 GROUP BY jour
 ORDER BY jour;
@@ -185,12 +187,10 @@ ORDER BY jour;
 -- -----------------------------------------------------------------
 -- KPI 4bis : Alertes par service
 -- -----------------------------------------------------------------
--- Le Parquet n'a pas service_code : jointure stay_id. INNER JOIN pour
--- ne pas compter un relevé dont le séjour a été écarté en Silver.
 CREATE OR REPLACE VIEW gold_pilotage.v_alertes_par_service
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
-    f.service_code,
+    m.service_code,
     s.service_label,
     count()                          AS nb_mesures,
     sum(m.is_alerte)                 AS nb_alertes,
@@ -199,9 +199,8 @@ AS SELECT
     sum(m.alerte_fievre)             AS nb_fievres,
     uniqExact(m.stay_id)             AS nb_sejours_monitores
 FROM gold_pilotage.fact_monitoring m
-INNER JOIN silver.fact_sejour f ON m.stay_id = f.stay_id
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
-GROUP BY f.service_code, s.service_label
+LEFT JOIN gold_pilotage.dim_service s ON m.service_code = s.service_code
+GROUP BY m.service_code, s.service_label
 ORDER BY nb_alertes DESC;
 
 -- -----------------------------------------------------------------
@@ -219,8 +218,8 @@ AS SELECT
     round(
         100.0 * countIf(f.discharge_mode = 'deces') / count(),
     2)                                          AS taux_mortalite_pct
-FROM silver.fact_sejour f
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
+FROM gold_pilotage.fact_sejour f
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
 WHERE f.date_sortie IS NOT NULL
 GROUP BY f.service_code, s.service_label, f.admission_mode
 ORDER BY taux_mortalite_pct DESC;
@@ -242,7 +241,7 @@ AS SELECT
     f.nb_alertes_monitoring,
     f.region_code
 FROM gold_pilotage.fact_sejour f
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
 WHERE f.date_sortie IS NULL
 ORDER BY jours_depuis_admission DESC;
 

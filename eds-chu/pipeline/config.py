@@ -29,6 +29,7 @@ def _resolve(key: str) -> Path:
 
 SOURCE_DIR = _resolve("SOURCE_DIR")
 LAKE_DIR   = _resolve("LAKE_DIR")
+SQL_DIR    = _ENV_DIR / "sql"
 
 CLICKHOUSE_HOST     = os.environ.get("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT     = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
@@ -38,3 +39,19 @@ CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 # Comptes lecture seule Metabase (un par base Gold) — pas le compte admin.
 GOLD_PILOTAGE_PASSWORD  = _require("GOLD_PILOTAGE_PASSWORD")
 GOLD_RECHERCHE_PASSWORD = _require("GOLD_RECHERCHE_PASSWORD")
+
+
+def exec_sql_file(ch, filename: str) -> None:
+    """Exécute un fichier de sql/ statement par statement.
+
+    Les commentaires `--` sont retirés avant le split sur ';' : un
+    point-virgule dans un commentaire ne doit pas couper l'instruction.
+    """
+    sql = (SQL_DIR / filename).read_text()
+    no_comments = "\n".join(
+        l for l in sql.splitlines() if not l.strip().startswith("--")
+    )
+    for stmt in no_comments.split(";"):
+        clean = stmt.strip()
+        if clean:
+            ch.command(clean)

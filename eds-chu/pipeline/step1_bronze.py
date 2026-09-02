@@ -22,7 +22,6 @@ import csv
 import json
 import logging
 from datetime import date, datetime
-from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -32,31 +31,10 @@ from . import config
 log = logging.getLogger(__name__)
 
 
-def _sql_path(filename: str) -> Path:
-    return Path(__file__).parent.parent / "sql" / filename
-
-
-def _exec_sql_file(ch, filename: str) -> None:
-    """Lit un fichier .sql et exécute chaque instruction séparée par ';'.
-
-    Les commentaires sont supprimés AVANT le split pour éviter qu'un ';'
-    dans un commentaire (ex: 'region_code ; il est...') soit interprété
-    à tort comme un séparateur d'instruction SQL.
-    """
-    sql = _sql_path(filename).read_text()
-    no_comments = "\n".join(
-        l for l in sql.splitlines() if not l.strip().startswith("--")
-    )
-    for stmt in no_comments.split(";"):
-        clean = stmt.strip()
-        if clean:
-            ch.command(clean)
-
-
 def init_bronze(ch) -> None:
     """Crée bases et tables Bronze (IF NOT EXISTS)."""
     log.info("Initialisation du schéma Bronze et Meta...")
-    _exec_sql_file(ch, "bronze.sql")
+    config.exec_sql_file(ch, "bronze.sql")
 
 
 # Référentiels exclus : pas de _source_date, vidés à part.
