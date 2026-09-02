@@ -1,6 +1,6 @@
 # Configuration Metabase — EDS CHU
 
-Metabase est accessible à **http://localhost:3001** (port 3001 car le 3000 est réservé au portfolio).
+Metabase est accessible à **http://localhost:3001**
 
 ---
 
@@ -193,17 +193,17 @@ puis **Save** et l'ajouter au dashboard.
 
 ### Dashboard « Pilotage hospitalier » (base `Pilotage hospitalier`)
 
-| Vue | Visualisation suggérée |
+| Vue | Visualisation |
 |---|---|
-| `v_data_freshness` | Nombre (afficher `derniere_date_source` et `anciennete_jours`) |
+| `v_data_freshness` | Table |
 | `v_sejours_en_cours` | Table, triée sur `jours_depuis_admission` |
 | `v_dms_par_service` | Barres horizontales (`service_label` × `dms_jours`) |
 | `v_dms_par_service_mois` | Courbe (`mois` en X, une série par `service_label`) |
 | `v_activite_urgences` | Courbe (`jour` × `nb_passages`) |
-| `v_taux_readmission_par_service` | Barres (`service_label` × `taux_readmission_pct`) |
-| `v_mortalite` | Table ou barres empilées par `admission_mode` |
-| `v_alertes_monitoring_par_jour` | Courbe (`jour` × `pct_alertes`) |
-| `v_alertes_par_service` | Barres (`service_label` × `pct_alertes`) |
+| `v_taux_readmission_30j` | Nombre unique (taux global) |
+| `v_mortalite` | Table (service × mode d'admission) |
+| `v_alertes_monitoring_par_jour` | 3 courbes (désaturation, brady/tachycardie, fièvre) |
+| `v_alertes_par_service` | Barres empilées par type d'alerte |
 
 ### Dashboard « Recherche clinique » (base `Recherche clinique`)
 
@@ -249,8 +249,8 @@ curl -s -G "$REC" --data-urlencode "query=SELECT count() FROM silver.fact_sejour
 curl -s -G "$PIL" --data-urlencode "query=SELECT count() FROM bronze.sejours"
 ```
 
-Le jeu de tests complet, avec les résultats attendus, est dans
-[`tests-gold.md`](tests-gold.md).
+Le cloisonnement moteur et les choix de visualisation sont détaillés dans
+le [rapport partie 1](../rapport.md).
 
 > **Point d'architecture — `SQL SECURITY DEFINER`**
 > Les vues Gold lisent `silver.*`, alors que les comptes Gold n'ont aucun droit

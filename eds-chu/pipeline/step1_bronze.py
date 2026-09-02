@@ -1,39 +1,22 @@
 """
 ÉTAPE 1 — CHARGEMENT BRONZE
 
-Rôle : lire les fichiers du lake et les insérer dans les tables Bronze de ClickHouse.
+Lit le lake et insère dans ClickHouse. Incrémental via meta.pipeline_runs :
+une date déjà en 'success' est sautée.
 
-Principe incrémental : on consulte meta.pipeline_runs pour ne jamais insérer
-deux fois la même date. Si la date est déjà marquée 'success', on la saute.
+Avant chaque tentative, _cleanup_date supprime les lignes de cette
+_source_date. Un crash entre deux inserts (patients / séjours /
+diagnostics / monitoring) ne laisse donc pas de partiel qui serait
+dupliqué au retry — MergeTree ne déduplique pas.
 
-Résilience aux crashs (idempotence forte) :
-  Le chargement d'une date fait 4 inserts séparés (patients, séjours,
-  diagnostics, monitoring). Un crash entre deux inserts laisserait des
-  lignes partielles en base, que le prochain run reviendrait dupliquer
-  (les tables séjours/diagnostics/monitoring sont en MergeTree pur,
-  sans déduplication). Pour l'éviter, on lance systématiquement un
-  _cleanup_date au début de chaque tentative : tout ce qui porte
-  _source_date = date_str est supprimé avant réinsertion. Le run n'est
-  considéré comme réussi qu'après le _record_run 'success' final.
+Le typage Python (str → datetime / int) est un premier filet : une
+valeur illisible fait échouer l'insert plutôt que d'entrer en base.
 
-Typage comme premier filet de qualité :
-  Toutes les sources arrivent en texte brut (CSV = tout string, JSON = tout string).
-  Python convertit les valeurs avant insertion : str → datetime, str → int, etc.
-  Si une valeur n'est pas parseable (ex: admission_ts invalide), l'insertion plante
-  immédiatement avec une erreur explicite. C'est voulu : mieux vaut échouer tôt
-  sur une donnée corrompue que la laisser entrer silencieusement dans la base.
+Formats : CSV, JSON imbriqué (diagnostics dépliés en 1 ligne / code),
+Parquet via insert_arrow.
 
-Formats gérés :
-  - CSV (patients, séjours, référentiels) : lus avec le module csv standard
-  - JSON imbriqué (diagnostics) : dépliés en Python avant insertion
-    (double boucle séjour → diagnostics → 1 ligne par code CIM-10)
-  - Parquet (monitoring) : lu avec PyArrow, inséré via insert_arrow
-    (protocole binaire natif ClickHouse, plus rapide que les listes Python)
-
-Principe fondamental : Bronze ne filtre rien.
-  Les séjours incohérents (discharge < admission) et les séjours en cours
-  (discharge NULL) sont tous insérés tels quels. Filtrer en Bronze ferait
-  perdre la traçabilité des anomalies. C'est Silver qui applique les règles métier.
+Bronze ne filtre rien. Les anomalies restent en base pour audit ;
+Silver applique les contrôles qualité.
 """
 import csv
 import json
@@ -71,17 +54,12 @@ def _exec_sql_file(ch, filename: str) -> None:
 
 
 def init_bronze(ch) -> None:
-    """Crée les bases et tables Bronze si elles n'existent pas.
-
-    Utilise IF NOT EXISTS partout → idempotent : rejouer n'écrase rien.
-    """
+    """Crée bases et tables Bronze (IF NOT EXISTS)."""
     log.info("Initialisation du schéma Bronze et Meta...")
     _exec_sql_file(ch, "bronze.sql")
 
 
-# Tables Bronze chargées par date, indexées sur _source_date pour le cleanup.
-# Les référentiels ne sont pas dans cette liste : ils sont traités séparément
-# (pas de colonne _source_date, cf. _cleanup_referentiels).
+# Référentiels exclus : pas de _source_date, vidés à part.
 _BRONZE_TABLES_PAR_DATE = (
     "bronze.patients",
     "bronze.sejours",
@@ -91,18 +69,10 @@ _BRONZE_TABLES_PAR_DATE = (
 
 
 def _cleanup_date(ch, date_str: str) -> None:
-    """Supprime toute ligne Bronze portant cette _source_date.
+    """Supprime les lignes Bronze de cette _source_date avant réinsert.
 
-    Appelé AVANT chaque tentative de chargement, y compris la première :
-    - Premier run : aucune ligne à supprimer, opération no-op.
-    - Retry après crash partiel : nettoie les inserts qui avaient réussi
-      avant le plantage, évitant la duplication.
-
-    On utilise DELETE FROM (lightweight delete de ClickHouse ≥ 22.8) :
-    les lignes sont marquées supprimées immédiatement et invisibles aux
-    SELECT suivants, puis physiquement retirées lors du prochain merge.
-    mutations_sync=2 force l'attente de l'application effective pour
-    garantir qu'aucune ligne fantôme ne subsiste au moment du réinsert.
+    mutations_sync=2 : attend que le DELETE soit visible, sinon le
+    réinsert pourrait coexister avec des lignes encore marquées.
     """
     for table in _BRONZE_TABLES_PAR_DATE:
         ch.command(
@@ -113,23 +83,13 @@ def _cleanup_date(ch, date_str: str) -> None:
 
 
 def _cleanup_referentiels(ch) -> None:
-    """Vide les tables de référentiels avant réinsertion.
-
-    Les référentiels n'ont pas de _source_date : on tronque intégralement.
-    C'est sans risque parce qu'ils sont rechargés dans la foulée depuis
-    le lake, qui reste la source de vérité.
-    """
+    """TRUNCATE des référentiels (pas de _source_date) avant réinsert."""
     ch.command("TRUNCATE TABLE IF EXISTS bronze.services")
     ch.command("TRUNCATE TABLE IF EXISTS bronze.cim10")
 
 
 def _already_loaded(ch, date_str: str) -> bool:
-    """Vérifie dans meta.pipeline_runs si cette date a déjà été chargée avec succès.
-
-    C'est le mécanisme central de l'incrémentalité : on ne consulte pas
-    les tables Bronze elles-mêmes (requête coûteuse) mais la table de traçabilité,
-    qui est légère et indexée sur (layer, source_date).
-    """
+    """True si meta.pipeline_runs a déjà un run Bronze 'success' pour cette date."""
     result = ch.query(
         "SELECT count() FROM meta.pipeline_runs "
         "WHERE layer = 'bronze' AND source_date = {d:String} AND status = 'success'",
@@ -139,12 +99,7 @@ def _already_loaded(ch, date_str: str) -> bool:
 
 
 def _record_run(ch, date_str: str, status: str, rows: int, error: str = "") -> None:
-    """Enregistre le résultat d'un run dans meta.pipeline_runs.
-
-    En cas d'erreur, le statut 'error' est enregistré (pas de silencing).
-    Lors du prochain run, _already_loaded retournera False pour cette date
-    (on ne cherche que les status='success'), donc le pipeline retentera.
-    """
+    """Écrit le résultat du run. Un statut 'error' n'empêche pas le retry."""
     ch.insert(
         "meta.pipeline_runs",
         [[
@@ -165,13 +120,9 @@ def _record_run(ch, date_str: str, status: str, rows: int, error: str = "") -> N
 
 def _load_patients(ch, date_str: str) -> int:
     lake_file = config.LAKE_DIR / "patients" / date_str / "patients.csv"
-    # Fichier absent = la table n'a pas été déposée pour cette date
-    # (cf. step0 : toutes les tables ne couvrent pas les mêmes périodes).
     if not lake_file.exists():
         return 0
     rows = []
-    # On convertit date_str en objet date Python pour que ClickHouse reçoive
-    # le bon type (Date32) et non une chaîne à parser côté serveur.
     src_date = date.fromisoformat(date_str)
 
     with open(lake_file, newline="") as f:
@@ -201,10 +152,7 @@ def _load_sejours(ch, date_str: str) -> int:
 
     with open(lake_file, newline="") as f:
         for row in csv.DictReader(f):
-            # discharge_ts peut être vide (séjour en cours) → None = NULL en SQL.
-            # On ne filtre pas ici : Bronze conserve toutes les données brutes,
-            # y compris les séjours en cours et les incohérences temporelles.
-            # C'est Silver qui appliquera les règles de qualité.
+            # Chaîne vide = séjour en cours → NULL. On n'écarte rien ici.
             discharge = (
                 datetime.fromisoformat(row["discharge_ts"])
                 if row["discharge_ts"]
@@ -244,10 +192,7 @@ def _load_diagnostics(ch, date_str: str) -> int:
     with open(lake_file) as f:
         data = json.load(f)
 
-    # Dépliage du JSON imbriqué : structure source = liste d'objets
-    # {"stay_id": "S001", "diagnostics": [{"code_cim10": "I10", "type": "principal"}, ...]}
-    # On produit 1 ligne par (stay_id, code_cim10) pour un grain analytique plat,
-    # directement requêtable en SQL sans dépiler un tableau à chaque fois.
+    # JSON imbriqué → 1 ligne par (stay_id, code_cim10, type).
     for entry in data:
         for diag in entry.get("diagnostics", []):
             rows.append([
@@ -271,28 +216,15 @@ def _load_monitoring(ch, date_str: str) -> int:
         return 0
     src_date = date.fromisoformat(date_str)
 
-    # PyArrow lit le Parquet nativement en mémoire sous forme de Table Arrow.
     table = pq.read_table(lake_file)
-
-    # On ajoute _source_date directement dans la Table Arrow avant insertion.
-    # Plus efficace que de passer par Python ligne par ligne.
     src_date_col = pa.array([src_date] * table.num_rows, type=pa.date32())
     table = table.append_column("_source_date", src_date_col)
-
-    # insert_arrow envoie la Table Arrow directement à ClickHouse via le protocole
-    # binaire natif — c'est la méthode la plus rapide pour les gros volumes Parquet,
-    # sans conversion intermédiaire vers des listes Python.
     ch.insert_arrow("bronze.monitoring", table)
     return table.num_rows
 
 
 def _load_referentiels(ch) -> None:
-    """Charge les référentiels services et CIM-10 dans Bronze.
-
-    Idempotent grâce au moteur ReplacingMergeTree des tables cibles :
-    si on insère deux fois les mêmes codes, ClickHouse ne garde qu'une version
-    lors du prochain merge (et Silver force la dédup avec FINAL).
-    """
+    """Charge services et CIM-10 (ReplacingMergeTree côté schéma)."""
     ref_dir = config.LAKE_DIR / "referentiels"
 
     rows_svc = []
@@ -309,25 +241,12 @@ def _load_referentiels(ch) -> None:
 
 
 def load_bronze(ch, date_str: str) -> bool:
-    """Charge toutes les sources d'une date dans Bronze.
-
-    Logique incrémentale : si cette date est déjà en 'success' dans
-    meta.pipeline_runs, on ne fait rien. Sinon, on charge les 4 sources
-    dans l'ordre, et on enregistre le résultat (succès ou erreur).
-
-    Cleanup préalable systématique : on supprime toutes les lignes déjà
-    présentes pour cette date (héritées d'un crash précédent) avant
-    d'insérer. C'est ce qui rend le pipeline sûr à relancer même après
-    un plantage entre deux inserts.
-
-    Retourne True si de nouvelles données ont été chargées, False sinon.
-    """
+    """Charge les 4 sources d'une date. True si insertion, False si déjà fait."""
     if _already_loaded(ch, date_str):
         log.info(f"Bronze {date_str} : déjà chargé, ignoré.")
         return False
 
     log.info(f"Bronze {date_str} : chargement en cours...")
-    # Cleanup obligatoire : purge un éventuel run partiel précédent.
     _cleanup_date(ch, date_str)
     total_rows = 0
 
@@ -348,33 +267,18 @@ def load_bronze(ch, date_str: str) -> bool:
         log.info(f"  monitoring  : {n} lignes")
         total_rows += n
 
-        # On enregistre le succès APRÈS toutes les insertions : si une étape
-        # échoue à mi-chemin, on ne marque pas la date comme traitée,
-        # ce qui forcera un retry complet au prochain run.
         _record_run(ch, date_str, "success", total_rows)
         log.info(f"Bronze {date_str} : {total_rows} lignes chargées.")
         return True
 
     except Exception as exc:
-        # On enregistre l'erreur pour l'audit trail, puis on relève l'exception
-        # pour que l'orchestrateur (run.py) s'arrête et signale l'échec.
         _record_run(ch, date_str, "error", total_rows, str(exc))
         log.error(f"Bronze {date_str} : erreur — {exc}")
         raise
 
 
 def load_referentiels(ch) -> None:
-    """Charge les référentiels (services, CIM-10). Idempotent.
-
-    On utilise 'referentiels' comme source_date dans meta.pipeline_runs
-    (valeur sentinelle) pour réutiliser le même mécanisme de traçabilité
-    que pour les dates quotidiennes.
-
-    Résilience : les deux tables sont vidées avant réinsertion
-    (_cleanup_referentiels) et la réussite n'est enregistrée qu'après
-    l'insert des DEUX fichiers. Un crash entre services et cim10 est
-    donc corrigé au prochain run par un rechargement complet.
-    """
+    """Charge services et CIM-10. source_date sentinelle : 'referentiels'."""
     if _already_loaded(ch, "referentiels"):
         log.info("Référentiels déjà chargés, ignorés.")
         return

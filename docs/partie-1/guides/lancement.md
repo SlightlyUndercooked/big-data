@@ -80,7 +80,7 @@ Le pipeline détecte automatiquement les nouvelles dates dans `source-filestorag
 
 ## Configurer Metabase (une seule fois)
 
-Voir le guide dédié : **[docs/metabase.md](metabase.md)**
+Voir le guide dédié : **[metabase.md](metabase.md)**
 
 Il couvre : création du compte admin, ajout des deux connexions ClickHouse, groupes d'utilisateurs, permissions, et dépannage du driver ClickHouse.
 
@@ -99,17 +99,17 @@ python -m pipeline.metabase_setup
 -- Dans http://localhost:8123/play
 
 -- Bronze : données brutes chargées
-SELECT count() FROM bronze.patients;    -- ~16 200 (3 jours × dump cumulatif)
-SELECT count() FROM bronze.sejours;     -- 15 000
-SELECT count() FROM bronze.monitoring;  -- ~66 677
+SELECT count() FROM bronze.patients;    -- 18 000 (3 photos cumulatives × 6 000)
+SELECT count() FROM bronze.sejours;     -- 6 797
+SELECT count() FROM bronze.monitoring;  -- 41 778
 
 -- Silver : après nettoyage
-SELECT count() FROM silver.dim_patient;   -- 6 000 patients uniques (dédup)
-SELECT count() FROM silver.fact_sejour;   -- 14 864 (15 000 − 136 anomalies)
+SELECT count() FROM silver.dim_patient;   -- 6 000 patients uniques
+SELECT count() FROM silver.fact_sejour;   -- 6 729 (6 797 − 68 anomalies)
 
 -- Gold pilotage : KPIs
 SELECT * FROM gold_pilotage.v_dms_par_service;
-SELECT * FROM gold_pilotage.v_taux_readmission_30j;
+SELECT * FROM gold_pilotage.v_taux_readmission_30j;  -- 780 / 6729 = 11,6 %
 
 -- Gold recherche : cohortes (règle ≥ 5 patients appliquée)
 SELECT * FROM gold_recherche.v_prevalence_pathologies;

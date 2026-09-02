@@ -1,9 +1,7 @@
 """
-ORCHESTRATEUR Point d'entrée du pipeline EDS-CHU
+Point d'entrée du pipeline EDS-CHU.
 
-Usage :
-    cd eds-chu/
-    python -m pipeline.run
+    cd eds-chu/ && python -m pipeline.run
 
 Action :
     1. Découvre automatiquement les dates disponibles dans SOURCE_DIR
@@ -63,7 +61,6 @@ def _discover_source_dates() -> list[str]:
 
 
 def _get_client():
-    """Crée et retourne une connexion ClickHouse via HTTP (port 8123)."""
     return clickhouse_connect.get_client(
         host=config.CLICKHOUSE_HOST,
         port=config.CLICKHOUSE_PORT,
@@ -81,8 +78,6 @@ def run() -> None:
 
     ch = _get_client()
 
-    # Initialisation du schéma Bronze : crée les bases et tables si elles
-    # n'existent pas encore. Utilise IF NOT EXISTS partout → idempotent.
     init_bronze(ch)
 
     # Les référentiels (services, CIM-10) sont déposés une seule fois par le CHU.
@@ -91,7 +86,6 @@ def run() -> None:
     copy_referentiels()
     load_referentiels(ch)
 
-    # Traitement incrémental par date, dans l'ordre chronologique.
     dates = _discover_source_dates()
     log.info(f"Dates source : {dates}")
 
@@ -114,18 +108,10 @@ def run() -> None:
     else:
         log.info("Aucune nouvelle date en Bronze.")
 
-    # Silver et Gold sont TOUJOURS reconstruits, même si Bronze n'a pas changé.
-    # Raison : Silver et Gold ne sont pas incrémentaux, ils sont recalculés
-    # depuis zéro à chaque run (CREATE OR REPLACE)
-    # ça garantit la cohérence même si un run précédent a planté
-    # après Bronze mais avant Silver.
+    # Silver / Gold / grants : reconstruction totale à chaque run.
+    # Bronze seul est incrémental (meta.pipeline_runs).
     build_silver(ch)
     build_gold(ch)
-
-    # Les droits sont réappliqués à chaque run : CREATE OR REPLACE VIEW
-    # ne détruit pas les GRANT (ils portent sur la base, pas sur l'objet),
-    # mais rejouer garantit que le .env reste la source de vérité des mots
-    # de passe et qu'un compte supprimé à la main est recréé.
     build_grants(ch)
 
     log.info("=" * 60)

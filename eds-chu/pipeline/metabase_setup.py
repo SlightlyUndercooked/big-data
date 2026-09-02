@@ -107,7 +107,7 @@ def remove_sample_content(mb: Metabase) -> None:
             log.info(f"Collection d'exemple '{coll['name']}' : archivée")
 
 
-# Connexions clicklhouse
+# Connexions ClickHouse
 
 def ensure_database(mb: Metabase, name: str, dbname: str, user: str, password: str) -> int:
     """Crée (ou retrouve) une connexion ClickHouse et retourne son id."""
@@ -120,8 +120,7 @@ def ensure_database(mb: Metabase, name: str, dbname: str, user: str, password: s
         "engine": "clickhouse",
         "name": name,
         "details": {
-            # Nom du service Docker : Metabase tourne dans le même réseau
-            # compose que ClickHouse, 'localhost' ne fonctionnerait pas.
+            # localhost ne marche pas : Metabase est dans le réseau Docker.
             "host": "clickhouse",
             "port": 8123,
             "user": user,
@@ -211,7 +210,6 @@ CARTES_PILOTAGE = [
     ("DMS par service et par mois",
      "SELECT * FROM v_dms_par_service_mois ORDER BY mois",
      "line", {"graph.dimensions": ["mois", "service_label"], "graph.metrics": ["dms_jours"]}, HALF, 8),
-    # La vue est déjà globale (une seule ligne) : la carte affiche le taux tel quel.
     ("Taux de réadmission à 30 jours",
      "SELECT taux_readmission_pct FROM v_taux_readmission_30j",
      "scalar", {"scalar.suffix": " %"}, HALF, 8),
@@ -249,7 +247,7 @@ CARTES_RECHERCHE = [
 ]
 
 
-# Groupes, permissions et utilisateurs (cf. docs/metabase.md, étapes 4-6)
+# Groupes, permissions et utilisateurs (cf. docs/partie-1/guides/metabase.md)
 
 def ensure_group(mb: Metabase, name: str) -> int:
     for grp in mb.get("/permissions/group"):
@@ -388,7 +386,7 @@ def run() -> None:
     coll_recherche = build_dashboard(mb, db_recherche, "Recherche clinique",
                                      "Recherche clinique", CARTES_RECHERCHE)
 
-    # --- Cloisonnement applicatif (étapes 4-6 de docs/metabase.md) ---
+    # Cloisonnement applicatif (docs/partie-1/guides/metabase.md)
     grp_ops = ensure_group(mb, "operationnels")
     grp_cher = ensure_group(mb, "chercheurs")
     all_users = next(

@@ -36,7 +36,7 @@ Les deux schémas Gold (pilotage et recherche) partagent la **même définition 
 
 > **Grain de la table de faits principale : un séjour hospitalier**
 
-![Schéma Séjour](./images/star_schema_sejour.png)
+![Schéma Séjour](./images/modele/star_schema_sejour.png)
 
 
 ### Pourquoi ce grain pour fact_sejour ?
@@ -64,7 +64,7 @@ Le grain « un séjour » est le plus naturel pour le pilotage hospitalier : tou
 #### `fact_monitoring`
 
 Table de faits **sans dimension** — elle expose le flux brut de constantes vitales, ligne par ligne.
-![Schema Monitoring](./images/fact_monitoring.png)
+![Schema Monitoring](./images/modele/fact_monitoring.png)
 
 | Colonne | Type | Description |
 |---|---|---|
@@ -96,7 +96,7 @@ Table de faits **sans dimension** — elle expose le flux brut de constantes vit
 
 > **Grain de la table de faits : une occurrence de diagnostic sur un séjour**
 
-![Schema Diagnostic](./images/star_schema_diagnostic.png)
+![Schema Diagnostic](./images/modele/star_schema_diagnostic.png)
 
 > `sejour_id` est absent de `fact_diagnostic` côté recherche : un chercheur ne doit pas pouvoir remonter au séjour de pilotage via une jointure. Le cloisonnement est structurel, pas uniquement déclaratif.
 
@@ -110,13 +110,11 @@ Un séjour peut avoir plusieurs diagnostics (un principal + plusieurs associés)
 
 | Colonne | Type | Description | Justification |
 |---|---|---|---|
-| `diagnostic_id` | String | Concaténation `sejour_id\|\|'_'\|\|code_cim10` | Clé surrogate stable et reproductible |
-| `patient_pseudo` | String | FK → dim_patient | Même pseudonyme que côté pilotage — le sel est identique, le même patient_id produit le même hash dans les deux schémas |
+| `patient_pseudo` | String | FK → dim_patient | Même pseudonyme que côté pilotage — le sel est identique |
 | `code_cim10` | String | FK → dim_pathologie | Pivot vers le libellé et la hiérarchie CIM-10 |
-| `date_admission` | Date | FK → dim_temps | Date d'entrée du séjour — situe le diagnostic dans le temps |
-| `age_au_diagnostic` | Int | Âge du patient au diagnostic | Calculé en Silver : `toYear(date_admission) - birth_year`. Le diagnostic n'ayant pas de date propre dans la source, la date d'admission du séjour sert de référence |
-| `type_diag` | String | principal / associe | La prévalence compte tous les types (un patient porteur d'une pathologie appartient à la cohorte, que le diagnostic soit principal ou associé) ; la colonne permet de restreindre au principal si une étude l'exige |
-| `service_code` | String | Service lors du diagnostic | Dénormalisé pour éviter une dépendance entre les schémas Gold |
+| `type_diag` | String | principal / associe | La prévalence compte tous les types ; la colonne permet de restreindre au principal si une étude l'exige |
+| `age_au_diagnostic` | Int | Âge du patient au diagnostic | Calculé en Silver : `toYear(admission) - birth_year` |
+| `mois_admission` | Date | Mois d'entrée du séjour | Date généralisée au mois (minimisation RGPD) — `stay_id`, `service_code` et `diagnostic_id` sont absents de la vue Gold |
 
 #### `dim_patient` (partagée)
 
