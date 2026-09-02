@@ -1,6 +1,6 @@
 # Tests de la couche Gold
 
-Valeurs attendues mesurées sur le jeu de données fourni (3 jours : 2026-08-26 → 28).
+Valeurs attendues mesurées sur le jeu de données fourni (28 jours : 2026-08-01 → 28).
 Les requêtes admin se lancent depuis http://localhost:8123/play.
 
 ---
@@ -8,20 +8,20 @@ Les requêtes admin se lancent depuis http://localhost:8123/play.
 ## 1. Toutes les vues répondent
 
 ```sql
--- Pilotage : 4 vues d'exposition + 9 vues KPI
-SELECT count() FROM gold_pilotage.v_sejours_en_cours;              -- 1190
+-- Pilotage : 4 vues d'exposition + 8 vues KPI
+SELECT count() FROM gold_pilotage.v_sejours_en_cours;              -- 683
 SELECT count() FROM gold_pilotage.v_alertes_par_service;           -- 2
-SELECT count() FROM gold_pilotage.v_taux_readmission_par_service;  -- 8
+SELECT count() FROM gold_pilotage.v_taux_readmission_30j;          -- 1 (vue GLOBALE)
 SELECT count() FROM gold_pilotage.v_mortalite;                     -- 24
 SELECT count() FROM gold_pilotage.v_dms_par_service_mois;          -- 16
 SELECT count() FROM gold_pilotage.v_data_freshness;                -- 1
 
 -- Recherche
-SELECT count() FROM gold_recherche.fact_diagnostic;                -- 37040
-SELECT count() FROM gold_recherche.v_prevalence_pathologies;       -- 10
-SELECT count() FROM gold_recherche.v_prevalence_mensuelle;         -- 10
-SELECT count() FROM gold_recherche.v_description_cohorte;          -- 200
-SELECT count() FROM gold_recherche.v_comorbidites;                 -- 90
+SELECT count() FROM gold_recherche.fact_diagnostic;                -- 12713
+SELECT count() FROM gold_recherche.v_prevalence_pathologies;       -- 11
+SELECT count() FROM gold_recherche.v_prevalence_mensuelle;         -- 16
+SELECT count() FROM gold_recherche.v_description_cohorte;          -- 136
+SELECT count() FROM gold_recherche.v_comorbidites;                 -- 36
 ```
 
 `v_alertes_par_service` ne renvoie que **2 lignes** et c'est normal : le flux
@@ -39,31 +39,46 @@ INNER JOIN silver.fact_sejour f ON m.stay_id = f.stay_id;
 ```sql
 SELECT count() FROM silver.fact_sejour WHERE date_sortie IS NULL;
 SELECT count() FROM gold_pilotage.v_sejours_en_cours;
--- les deux doivent être égaux (1190)
+-- les deux doivent être égaux (683)
 ```
 
-## 3. Cohérence des réadmissions global / par service
+## 3. Réadmission à 30 jours — indicateur GLOBAL
+
+La règle métier (sortie précédente du même patient entre 1 et 30 jours avant
+l'admission) est définie dans `gold_pilotage.fact_sejour`, PAS en Silver :
+Silver nettoie, Gold porte les règles métier.
 
 ```sql
--- Le total par service doit égaler le total global
-SELECT sum(nb_readmissions) FROM gold_pilotage.v_taux_readmission_par_service;
-SELECT sum(nb_readmissions) FROM gold_pilotage.v_taux_readmission_30j;
--- doivent être égaux
+SELECT * FROM gold_pilotage.v_taux_readmission_30j;
+-- nb_sejours = 6729 | nb_readmissions = 780 | taux_readmission_pct = 11.6
+
+-- Cohérence avec la fact au grain séjour :
+SELECT count(), sum(is_readmission_30j) FROM gold_pilotage.fact_sejour;
+-- 6729 | 780
 ```
+
+Deux points de méthode, vérifiés sur les données :
+
+- **Tous les séjours comptent au dénominateur**, y compris les 683 en cours :
+  la réadmission se juge à l'admission, peu importe que le nouveau séjour soit
+  terminé. Filtrer sur `date_sortie IS NOT NULL` donnerait 637/6046 = 10,5 % en
+  écartant à tort 143 réadmissions actuellement hospitalisées.
+- La fenêtre `lagInFrame` (séjour précédent immédiat) donne le même résultat
+  qu'un self-join exhaustif « n'importe quel séjour antérieur sorti dans les
+  1-30 jours » (780 dans les deux cas) : pas de séjours imbriqués dans ce jeu
+  de données.
 
 ## 4. Mortalité — couverture élargie
 
 ```sql
--- v_mortalite couvre TOUS les modes d'admission, pas seulement l'urgence :
+-- v_mortalite couvre TOUS les séjours terminés, pas seulement les urgences :
 -- son total de décès doit être supérieur à celui de v_activite_urgences.
-SELECT sum(nb_deces) FROM gold_pilotage.v_mortalite;          -- 1996
-SELECT sum(nb_deces) FROM gold_pilotage.v_activite_urgences;  --  681
+SELECT sum(nb_deces) FROM gold_pilotage.v_mortalite;          -- 995
+SELECT sum(nb_deces) FROM gold_pilotage.v_activite_urgences;  -- 206
 ```
 
-L'écart chiffre l'angle mort corrigé : avant cette vue, `nb_deces` n'existait que
-dans `v_activite_urgences`, filtrée sur `admission_mode = 'urgence'`. **1315 décès
-sur 1996 (66 %)** — ceux survenus lors de séjours programmés ou de mutations —
-n'apparaissaient nulle part dans le pilotage.
+L'écart chiffre l'angle mort corrigé : **789 décès sur 995 (79 %)** surviennent
+hors du service des urgences et n'apparaissaient nulle part dans le pilotage.
 
 ## 5. Fraîcheur des données
 
@@ -94,18 +109,15 @@ SELECT * FROM gold_recherche.fact_diagnostic LIMIT 1;
 Le filtre `code_cim10 IN (... HAVING uniqExact(patient_pseudo) >= 5)` empêche
 de contourner les `HAVING >= 5` des vues KPI en réagrégeant la fact brute.
 
-Sur ce jeu de données il n'écarte rien (la plus petite cohorte fait 2689 patients).
-Pour vérifier qu'il est fonctionnel et non inerte, rejouer sa logique avec un
-seuil artificiellement haut :
+Sur ce jeu de données il est **réellement actif** : la plus petite cohorte fait
+3 patients, deux codes CIM-10 passent sous le seuil de 5.
 
 ```sql
-SELECT count() AS lignes, uniqExact(code_cim10) AS codes
-FROM silver.fact_diagnostic
-WHERE code_cim10 IN (
-    SELECT code_cim10 FROM silver.fact_diagnostic
-    GROUP BY code_cim10 HAVING uniqExact(patient_pseudo) >= 2700
-);
--- attendu : 26072 lignes, 7 codes (sur 10) → le filtre écarte bien
+SELECT count() FROM silver.fact_diagnostic;          -- 12720
+SELECT count() FROM gold_recherche.fact_diagnostic;  -- 12713 (7 lignes écartées)
+
+SELECT uniqExact(code_cim10) FROM silver.fact_diagnostic;          -- 13
+SELECT uniqExact(code_cim10) FROM gold_recherche.fact_diagnostic;  -- 11
 ```
 
 ## 8. RGPD — aucune vue recherche ne diffuse de cohorte < 5
@@ -157,37 +169,46 @@ Silver/Gold et réappliquer les droits, sans modifier les comptages :
 
 ```sql
 SELECT count() FROM silver.dim_patient;        -- 6000
-SELECT count() FROM silver.fact_diagnostic;    -- 37040
+SELECT count() FROM silver.fact_diagnostic;    -- 12720
 SELECT count() FROM bronze.sejours
-  WHERE discharge_ts IS NOT NULL AND discharge_ts < admission_ts;  -- 136
+  WHERE discharge_ts IS NOT NULL AND discharge_ts < admission_ts;  -- 68
 SELECT count() FROM silver.sejours_stg
   WHERE discharge_ts IS NOT NULL AND discharge_ts < admission_ts;  -- 0
 ```
 
----
+## 11. Monitoring — nettoyage Silver vs alertes cliniques Gold
 
-## Limite connue — ventilation des alertes par constante
+Deux notions à ne pas confondre, testables séparément :
 
-Dans `v_alertes_par_service`, les colonnes `nb_alertes_fc`, `nb_alertes_spo2` et
-`nb_alertes_temp` sont dégénérées sur le jeu de données fourni :
+**Nettoyage (Silver)** — les plages du sujet (FC 20-250, SpO2 50-100,
+Temp 30-45) sont des plages de plausibilité physiologique. Hors plage =
+donnée aberrante (capteur en panne, sentinelles 0/500 pour la FC) → écartée.
+
+```sql
+SELECT count() FROM bronze.monitoring;         -- 41778
+SELECT count() FROM silver.fact_monitoring;    -- 40920 (858 relevés aberrants écartés)
+
+-- Plus aucune valeur aberrante en Silver :
+SELECT count() FROM silver.fact_monitoring
+WHERE heart_rate NOT BETWEEN 20 AND 250
+   OR spo2 NOT BETWEEN 50 AND 100
+   OR temp_c NOT BETWEEN 30 AND 45;            -- 0
+```
+
+**Alertes cliniques (Gold)** — règle métier définie dans
+`gold_pilotage.fact_monitoring` :
+SpO2 < 92 % (désaturation) | FC < 50 ou > 100 bpm (brady/tachycardie) |
+Temp > 38,5 °C (fièvre).
 
 ```sql
 SELECT
-  countIf(heart_rate NOT BETWEEN 20 AND 250 AND spo2 BETWEEN 50 AND 100) AS fc_seule,
-  countIf(spo2 NOT BETWEEN 50 AND 100 AND heart_rate BETWEEN 20 AND 250) AS spo2_seule,
-  countIf(heart_rate NOT BETWEEN 20 AND 250 AND spo2 NOT BETWEEN 50 AND 100) AS les_deux,
-  countIf(temp_c NOT BETWEEN 30.0 AND 45.0) AS temp
-FROM silver.fact_monitoring;
--- obtenu : 0 | 0 | 1369 | 0
+  sum(is_alerte)                AS nb_alertes,            -- 3314
+  sum(alerte_desaturation)      AS nb_desaturations,      -- 1127
+  sum(alerte_brady_tachycardie) AS nb_brady_tachycardies, -- 1105
+  sum(alerte_fievre)            AS nb_fievres             -- 1082
+FROM gold_pilotage.fact_monitoring;
 ```
 
-Les relevés anormaux portent **toujours simultanément** une FC et une SpO2 hors
-plage (valeurs sentinelles 0 / 500 pour la FC, 0 / 120 pour la SpO2), jamais
-l'une sans l'autre. La température reste dans `[36.4 ; 40.0]` sur tout le fichier,
-donc toujours dans la plage physiologique `[30 ; 45]`.
-
-La source ne modélise donc pas des dérives cliniques indépendantes mais des
-**pannes de capteur** marquées par des valeurs sentinelles. Lecture correcte :
-« ce flux ne contient aucune anomalie de température », et non « la température
-n'est jamais anormale ». La ventilation est conservée car elle est juste et
-redeviendra discriminante sur une source produisant des dérives indépendantes.
+Un même relevé peut franchir plusieurs seuils : la somme des trois colonnes
+(3314) peut dépasser `nb_alertes` — ici elle lui est égale car aucun relevé
+ne cumule deux seuils sur ce jeu de données.

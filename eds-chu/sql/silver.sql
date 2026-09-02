@@ -17,10 +17,9 @@
 --   (<15k séjours), la reconstruction complète prend moins d'une seconde.
 --   L'incrémentalité est gérée UNIQUEMENT dans Bronze (meta.pipeline_runs).
 --
--- 6 tables produites :
+-- Tables produites :
 --   Dimensions : dim_service, dim_pathologie, dim_patient
---   Intermédiaires (suffixe _stg, non exposées en Gold) :
---     sejours_stg (nettoyage), monitoring_alertes_stg (agrégat par séjour)
+--   Intermédiaire (suffixe _stg, non exposée en Gold) : sejours_stg (nettoyage)
 --   Faits : fact_sejour, fact_diagnostic, fact_monitoring
 -- ===================================================================
 
@@ -167,84 +166,25 @@ WHERE discharge_ts IS NULL
    OR discharge_ts > admission_ts;
 
 -- -----------------------------------------------------------------
--- Agrégation monitoring : alertes par séjour
+-- Fait SÉJOUR — table centrale du pilotage hospitalier
 -- -----------------------------------------------------------------
--- Un relevé est "en alerte" si une constante sort de la plage physiologique.
--- Plages définies dans le sujet (§3 contrôles qualité) :
---   FC    : 20–250 bpm
---   SpO2  : 50–100 %
---   Temp  : 30–45 °C
+-- duree_sejour_jours : dateDiff('day', admission_ts, discharge_ts),
+--   NULL si discharge_ts est NULL (séjour en cours, durée inconnue).
 --
--- Exploration : 1369 alertes sur 66 677 relevés (2,1 %).
---
--- On agrège par séjour pour éviter d'exposer 72k lignes brutes en Gold.
--- Le détail complet reste accessible dans bronze.monitoring pour des
--- analyses ciblées (ex: évolution de la FC d'un patient sur un séjour).
-CREATE OR REPLACE TABLE silver.monitoring_alertes_stg
+-- Les INDICATEURS MÉTIER (réadmission à 30 jours, alertes de constantes)
+-- ne sont PAS calculés ici : Silver nettoie et structure, les règles
+-- métier appartiennent à Gold. La réadmission est définie dans
+-- gold_pilotage.v_taux_readmission_30j, les seuils cliniques d'alerte
+-- dans gold_pilotage.fact_monitoring.
+CREATE OR REPLACE TABLE silver.fact_sejour
 ENGINE = MergeTree()
 ORDER BY stay_id
 AS SELECT
     stay_id,
-    count()  AS nb_mesures,
-    countIf(
-        heart_rate NOT BETWEEN 20 AND 250
-        OR spo2    NOT BETWEEN 50 AND 100
-        OR temp_c  NOT BETWEEN 30.0 AND 45.0
-    )        AS nb_alertes_monitoring
-FROM bronze.monitoring
-GROUP BY stay_id;
-
--- -----------------------------------------------------------------
--- Fait SÉJOUR — table centrale du pilotage hospitalier
--- -----------------------------------------------------------------
--- Indicateurs calculés ici, en SQL ClickHouse (jamais en pandas) :
---
--- 1. duree_sejour_jours :
---    dateDiff('day', admission_ts, discharge_ts)
---    NULL si discharge_ts est NULL (séjour en cours, durée inconnue).
---
--- 2. is_readmission_30j :
---    Calculé par fenêtre glissante avec lagInFrame() de ClickHouse.
---    lagInFrame(discharge_ts, 1, NULL) OVER (PARTITION BY patient_pseudo ORDER BY admission_ts)
---    donne la date de sortie du séjour PRÉCÉDENT du même patient.
---    Si cette sortie précédente existe et a eu lieu entre 1 et 30 jours
---    avant l'admission courante, c'est une réadmission précoce.
---    BETWEEN 1 AND 30 : la borne inférieure à 1 exclut 0 jour (même jour),
---    qui correspond à une mutation entre services et non à une réadmission.
---    Pourquoi une fenêtre SQL et pas un self-join ?
---      Un self-join (séjours JOIN séjours sur patient_pseudo) serait O(n²).
---      lagInFrame est O(n) : il parcourt les séjours triés par patient une
---      seule fois et regarde simplement la ligne précédente.
---    Vérification : SELECT count() FROM silver.fact_sejour
---      WHERE is_readmission_30j = 1  → doit être > 0
---
--- 3. nb_alertes_monitoring :
---    Joint depuis silver.monitoring_alertes_stg (calculé ci-dessus).
---    coalesce(..., 0) car certains séjours peuvent ne pas avoir de monitoring.
-CREATE OR REPLACE TABLE silver.fact_sejour
-ENGINE = MergeTree()
-ORDER BY stay_id
-AS
-WITH prev AS (
-    SELECT
-        stay_id,
-        patient_pseudo,
-        service_code,
-        admission_ts,
-        discharge_ts,
-        admission_mode,
-        discharge_mode,
-        lagInFrame(discharge_ts, 1, NULL) OVER (
-            PARTITION BY patient_pseudo
-            ORDER BY admission_ts
-            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        ) AS prev_discharge_ts
-    FROM silver.sejours_stg
-)
-SELECT
-    stay_id,
     patient_pseudo,
     service_code,
+    admission_ts,
+    discharge_ts,
     toDate(admission_ts)  AS date_admission,
     toDate(discharge_ts)  AS date_sortie,
     admission_mode,
@@ -253,15 +193,8 @@ SELECT
         discharge_ts IS NOT NULL,
         dateDiff('day', admission_ts, discharge_ts),
         NULL
-    )                     AS duree_sejour_jours,
-    if(
-        prev_discharge_ts IS NOT NULL
-        AND dateDiff('day', prev_discharge_ts, admission_ts) BETWEEN 1 AND 30,
-        1, 0
-    )                     AS is_readmission_30j,
-    coalesce(m.nb_alertes_monitoring, 0) AS nb_alertes_monitoring
-FROM prev
-LEFT JOIN silver.monitoring_alertes_stg m USING (stay_id);
+    )                     AS duree_sejour_jours
+FROM silver.sejours_stg;
 
 -- -----------------------------------------------------------------
 -- Fait DIAGNOSTIC — central pour la recherche clinique
@@ -312,17 +245,23 @@ INNER JOIN silver.sejours_stg s ON d.stay_id = s.stay_id
 INNER JOIN silver.dim_patient p ON s.patient_pseudo = p.patient_pseudo;
 
 -- -----------------------------------------------------------------
--- Fait MONITORING — relevés bruts avec flag alerte (sans dimensions)
+-- Fait MONITORING — relevés NETTOYÉS (sans dimensions, sans règle métier)
 -- -----------------------------------------------------------------
 -- Table de faits autonome : ne joint aucune dimension.
--- Exposée telle quelle en Gold pilotage — Metabase peut grouper par
--- jour, par heure, filtrer sur is_alerte, etc. sans jointure supplémentaire.
 --
--- is_alerte = 1 si au moins une constante est hors plage :
---   FC hors [20–250 bpm] | SpO2 hors [50–100 %] | Temp hors [30–45 °C]
+-- CONTRÔLE QUALITÉ (rôle de Silver) : les plages du sujet (§3) sont des
+-- plages de PLAUSIBILITÉ PHYSIOLOGIQUE, pas des seuils d'alerte clinique :
+--   FC    : 20–250 bpm
+--   SpO2  : 50–100 %
+--   Temp  : 30–45 °C
+-- Une valeur hors plage est une donnée ABERRANTE (capteur en panne,
+-- valeurs sentinelles 0/500 pour la FC, 0/120 pour la SpO2 observées
+-- dans la source) : elle est ÉCARTÉE ici, comme les séjours incohérents
+-- le sont dans sejours_stg. Le détail brut reste auditable dans Bronze.
 --
--- Le stay_id permet de lier à fact_sejour si besoin (drill-through),
--- mais la table peut être interrogée seule pour la surveillance des constantes.
+-- Les SEUILS D'ALERTE CLINIQUE (SpO2 < 92, FC < 50 ou > 100, Temp > 38,5)
+-- sont une règle métier : ils sont définis en Gold
+-- (gold_pilotage.fact_monitoring), pas ici.
 CREATE OR REPLACE TABLE silver.fact_monitoring
 ENGINE = MergeTree()
 ORDER BY (stay_id, ts)
@@ -332,10 +271,8 @@ AS SELECT
     toDate(ts)  AS date_mesure,
     heart_rate,
     spo2,
-    temp_c,
-    toUInt8(
-        heart_rate NOT BETWEEN 20 AND 250
-        OR spo2 NOT BETWEEN 50 AND 100
-        OR temp_c NOT BETWEEN 30.0 AND 45.0
-    )           AS is_alerte
+    temp_c
 FROM bronze.monitoring
+WHERE heart_rate BETWEEN 20 AND 250
+  AND spo2 BETWEEN 50 AND 100
+  AND temp_c BETWEEN 30.0 AND 45.0

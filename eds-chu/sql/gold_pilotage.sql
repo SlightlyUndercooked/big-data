@@ -49,9 +49,30 @@ AS SELECT * FROM silver.dim_service;
 -- fact_sejour enrichie de region_code (dénormalisé depuis dim_patient Silver).
 -- region_code reste disponible pour le pilotage (analyse des flux géographiques,
 -- zone de chalandise) sans être dans la dim_patient partagée.
+--
+-- is_readmission_30j réadmission précoce :
+--   le patient est réadmis entre 1 et 30 jours après la sortie de son
+--   séjour précédent. Calculé par fenêtre lagInFrame (O(n), pas de
+--   self-join O(n²)). La borne à 1 exclut le même jour (mutation entre
+--   services, pas une réadmission).
+--
+-- nb_alertes_monitoring — nombre de relevés du séjour franchissant au
+--   moins un SEUIL CLINIQUE (cf. gold_pilotage.fact_monitoring ci-dessous).
 CREATE OR REPLACE VIEW gold_pilotage.fact_sejour
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
-AS SELECT
+AS
+WITH alertes_par_sejour AS (
+    SELECT
+        stay_id,
+        countIf(
+            spo2 < 92
+            OR heart_rate < 50 OR heart_rate >100
+            OR temp_c > 38.5
+        ) AS nb_alertes_monitoring
+    FROM silver.fact_monitoring
+    GROUP BY stay_id
+)
+SELECT
     f.stay_id,
     f.patient_pseudo,
     f.service_code,
@@ -60,18 +81,49 @@ AS SELECT
     f.admission_mode,
     f.discharge_mode,
     f.duree_sejour_jours,
-    f.is_readmission_30j,
-    f.nb_alertes_monitoring,
+    if(
+        lagInFrame(f.discharge_ts, 1, NULL) OVER w IS NOT NULL
+        AND dateDiff('day', lagInFrame(f.discharge_ts, 1, NULL) OVER w, f.admission_ts)
+            BETWEEN 1 AND 30,
+        1, 0
+    ) AS is_readmission_30j,
+    coalesce(a.nb_alertes_monitoring, 0) AS nb_alertes_monitoring,
     p.region_code
 FROM silver.fact_sejour f
-LEFT JOIN silver.dim_patient p USING (patient_pseudo);
+LEFT JOIN alertes_par_sejour a USING (stay_id)
+LEFT JOIN silver.dim_patient p USING (patient_pseudo)
+WINDOW w AS (
+    PARTITION BY f.patient_pseudo
+    ORDER BY f.admission_ts
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+);
 
--- fact_monitoring : relevés bruts avec flag alerte, sans jointure de dimensions.
--- Permet à Metabase de construire n'importe quelle agrégation temporelle
--- (par jour, par heure, par séjour) directement sur la fact.
+-- fact_monitoring
+--
+-- Silver garantit des valeurs physiologiquement plausibles (les aberrations
+-- capteur sont écartées) . ici on qualifie cliniquement chaque relevé :
+--   SpO2 < 92 % → désaturation en oxygène
+--   FC < 50 ou > 100 bpm → bradycardie / tachycardie
+--   Température > 38,5 °C → fièvre
+-- is_alerte = au moins un des trois seuils franchi.
 CREATE OR REPLACE VIEW gold_pilotage.fact_monitoring
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
-AS SELECT * FROM silver.fact_monitoring;
+AS SELECT
+    stay_id,
+    ts,
+    date_mesure,
+    heart_rate,
+    spo2,
+    temp_c,
+    toUInt8(spo2 < 92) AS alerte_desaturation,
+    toUInt8(heart_rate < 50 OR heart_rate > 100) AS alerte_brady_tachycardie,
+    toUInt8(temp_c > 38.5) AS alerte_fievre,
+    toUInt8(
+        spo2 < 92
+        OR heart_rate < 50 OR heart_rate > 100
+        OR temp_c > 38.5
+    ) AS is_alerte
+FROM silver.fact_monitoring;
 
 -- -----------------------------------------------------------------
 -- KPI 1 : Durée Moyenne de Séjour (DMS) par service
@@ -118,6 +170,11 @@ ORDER BY mois, dms_jours DESC;
 -- -----------------------------------------------------------------
 -- KPI 2 : Activité urgences — passages par jour
 -- -----------------------------------------------------------------
+-- Un « passage aux urgences » = un séjour dans le SERVICE des urgences
+-- (service_code = 'URGENCES'), pas une admission en mode urgence :
+-- 2 590 séjours sont admis en mode 'urgence' directement dans d'autres
+-- services (cardio, neuro...) sans passer par les urgences — ils relèvent
+-- de l'activité de ces services, pas de celle des urgences.
 CREATE OR REPLACE VIEW gold_pilotage.v_activite_urgences
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
@@ -126,120 +183,91 @@ AS SELECT
     countIf(discharge_mode = 'deces')    AS nb_deces,
     countIf(discharge_mode = 'mutation') AS nb_mutations_sortantes
 FROM silver.fact_sejour
-WHERE admission_mode = 'urgence'
+WHERE service_code = 'URGENCES'
 GROUP BY jour
 ORDER BY jour;
 
 -- -----------------------------------------------------------------
--- KPI 3 : Taux de réadmission à 30 jours (global, par mois)
+-- KPI 3 : Taux de réadmission à 30 jours (GLOBAL)
 -- -----------------------------------------------------------------
+-- Indicateur global de qualité des soins : une seule ligne.
+-- La règle métier (fenêtre 1-30 jours) est définie dans
+-- gold_pilotage.fact_sejour ; cette vue ne fait que l'agréger.
+--
+-- TOUS les séjours comptent au dénominateur, y compris les séjours en
+-- cours : la réadmission se juge à l'ADMISSION (le patient est revenu
+-- moins de 30 jours après sa sortie précédente), peu importe que le
+-- nouveau séjour soit terminé. Filtrer sur date_sortie IS NOT NULL
+-- écarterait à tort les réadmissions actuellement hospitalisées.
 CREATE OR REPLACE VIEW gold_pilotage.v_taux_readmission_30j
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
-    toStartOfMonth(date_admission)    AS mois,
     count()                           AS nb_sejours,
     sum(is_readmission_30j)           AS nb_readmissions,
     round(
         100.0 * sum(is_readmission_30j) / count(),
     1)                                AS taux_readmission_pct
-FROM silver.fact_sejour
-WHERE date_sortie IS NOT NULL
-GROUP BY mois
-ORDER BY mois;
+FROM gold_pilotage.fact_sejour;
+
+-- NOTE : une version « par service » (v_taux_readmission_par_service) a
+-- existé puis a été retirée. La réadmission est un indicateur de qualité
+-- GLOBAL : la ventiler par service attribuait la réadmission au service
+-- du NOUVEAU séjour, alors que la qualité questionnée est celle du service
+-- qui a laissé sortir le patient (souvent différent). Plutôt que de
+-- diffuser un indicateur à l'attribution trompeuse, on s'en tient au
+-- taux global demandé par le besoin métier.
 
 -- -----------------------------------------------------------------
--- KPI 3bis : Taux de réadmission à 30 jours PAR SERVICE
+-- KPI 4 : Surveillance des constantes — relevés en alerte par jour
 -- -----------------------------------------------------------------
--- Le taux global masque de fortes disparités : la réadmission précoce
--- n'a pas le même sens en cardiologie (pathologie chronique, réadmission
--- souvent attendue) qu'en chirurgie programmée (réadmission = complication).
--- Cet axe est le premier utilisé par les cadres de santé pour cibler
--- les actions d'amélioration.
---
--- On expose nb_sejours ET nb_readmissions en plus du pourcentage :
--- cela permet à Metabase de ré-agréger correctement sur plusieurs
--- services (on ne peut pas moyenner des pourcentages, il faut resommer
--- numérateur et dénominateur).
-CREATE OR REPLACE VIEW gold_pilotage.v_taux_readmission_par_service
-DEFINER = CURRENT_USER SQL SECURITY DEFINER
-AS SELECT
-    f.service_code,
-    s.service_label,
-    count()                     AS nb_sejours,
-    sum(f.is_readmission_30j)   AS nb_readmissions,
-    round(
-        100.0 * sum(f.is_readmission_30j) / count(),
-    1)                          AS taux_readmission_pct
-FROM silver.fact_sejour f
-LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
-WHERE f.date_sortie IS NOT NULL
-GROUP BY f.service_code, s.service_label
-ORDER BY taux_readmission_pct DESC;
-
--- -----------------------------------------------------------------
--- KPI 4 : Surveillance des constantes — alertes par jour
--- -----------------------------------------------------------------
+-- Seuils cliniques définis dans gold_pilotage.fact_monitoring :
+--   SpO2 < 92 % | FC < 50 ou > 100 bpm | Temp > 38,5 °C
+-- Ventilation par type d'alerte : un même relevé peut franchir
+-- plusieurs seuils, la somme des trois colonnes peut dépasser nb_alertes.
 CREATE OR REPLACE VIEW gold_pilotage.v_alertes_monitoring_par_jour
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
-    date_mesure                    AS jour,
-    count()                        AS nb_mesures_total,
-    sum(is_alerte)                 AS nb_alertes,
-    round(100.0 * sum(is_alerte) / count(), 1) AS pct_alertes
-FROM silver.fact_monitoring
+    date_mesure                     AS jour,
+    count()                         AS nb_mesures_total,
+    sum(is_alerte)                  AS nb_alertes,
+    sum(alerte_desaturation)        AS nb_desaturations,
+    sum(alerte_brady_tachycardie)   AS nb_brady_tachycardies,
+    sum(alerte_fievre)              AS nb_fievres
+FROM gold_pilotage.fact_monitoring
 GROUP BY jour
 ORDER BY jour;
 
 -- -----------------------------------------------------------------
--- KPI 4bis : Alertes monitoring PAR SERVICE, ventilées par constante
+-- KPI 4bis : Alertes monitoring PAR SERVICE, ventilées par type
 -- -----------------------------------------------------------------
 -- silver.fact_monitoring ne porte pas service_code : le Parquet source
 -- ne contient que stay_id. Rattacher une mesure à un service impose donc
 -- une jointure vers fact_sejour. La pré-calculer ici évite que Metabase
--- rejoue ce join sur ~67 000 lignes à chaque affichage du dashboard.
+-- rejoue ce join sur ~41 000 lignes à chaque affichage du dashboard.
 --
 -- INNER JOIN volontaire : les mesures rattachées à un séjour écarté en
 -- Silver (incohérence temporelle) ne doivent pas être comptabilisées.
 --
--- Ventilation par constante (FC / SpO2 / température) : un service dont
--- les alertes sont majoritairement des désaturations n'appelle pas la
--- même action qu'un service où c'est la température qui dérive.
--- Un même relevé peut être en alerte sur plusieurs constantes à la fois,
--- donc la somme des trois colonnes peut dépasser nb_alertes.
---
--- ATTENTION À LA LECTURE SUR LE JEU DE DONNÉES FOURNI
---   Sur les données actuelles ces trois colonnes sont dégénérées :
---   nb_alertes_fc = nb_alertes_spo2 = nb_alertes = 1369, et nb_alertes_temp = 0.
---   Vérifié : les relevés anormaux portent TOUJOURS simultanément une FC et
---   une SpO2 hors plage (valeurs sentinelles 0, 500 pour la FC ; 0, 120 pour
---   la SpO2), jamais l'une sans l'autre — 0 relevé en alerte FC seule,
---   0 en alerte SpO2 seule, 1369 sur les deux. La température, elle, reste
---   dans [36.4 ; 40.0] sur l'intégralité du fichier, donc toujours dans la
---   plage physiologique [30 ; 45].
---   Autrement dit la source ne modélise pas des dérives cliniques
---   indépendantes mais des pannes de capteur marquées par des sentinelles.
---   Il ne faut donc PAS conclure « la température n'est jamais anormale » :
---   la bonne lecture est « ce flux ne contient aucune anomalie de
---   température ». La ventilation reste en place car elle est correcte et
---   redeviendra discriminante dès que la source produira des dérives
---   indépendantes.
+-- Ventilation par type d'alerte clinique : un service dont les alertes
+-- sont majoritairement des désaturations n'appelle pas la même action
+-- qu'un service où domine la fièvre. Un même relevé peut franchir
+-- plusieurs seuils, la somme des trois colonnes peut dépasser nb_alertes.
 CREATE OR REPLACE VIEW gold_pilotage.v_alertes_par_service
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
     f.service_code,
     s.service_label,
-    count()                                        AS nb_mesures,
-    sum(m.is_alerte)                               AS nb_alertes,
-    round(100.0 * sum(m.is_alerte) / count(), 2)   AS pct_alertes,
-    countIf(m.heart_rate NOT BETWEEN 20 AND 250)   AS nb_alertes_fc,
-    countIf(m.spo2 NOT BETWEEN 50 AND 100)         AS nb_alertes_spo2,
-    countIf(m.temp_c NOT BETWEEN 30.0 AND 45.0)    AS nb_alertes_temp,
-    uniqExact(m.stay_id)                           AS nb_sejours_monitores
-FROM silver.fact_monitoring m
+    count()                          AS nb_mesures,
+    sum(m.is_alerte)                 AS nb_alertes,
+    sum(m.alerte_desaturation)       AS nb_desaturations,
+    sum(m.alerte_brady_tachycardie)  AS nb_brady_tachycardies,
+    sum(m.alerte_fievre)             AS nb_fievres,
+    uniqExact(m.stay_id)             AS nb_sejours_monitores
+FROM gold_pilotage.fact_monitoring m
 INNER JOIN silver.fact_sejour f ON m.stay_id = f.stay_id
 LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
 GROUP BY f.service_code, s.service_label
-ORDER BY pct_alertes DESC;
+ORDER BY nb_alertes DESC;
 
 -- -----------------------------------------------------------------
 -- KPI 5 : Mortalité hospitalière, toutes admissions confondues
@@ -298,10 +326,9 @@ AS SELECT
     f.admission_mode,
     dateDiff('day', f.date_admission, today()) AS jours_depuis_admission,
     f.nb_alertes_monitoring,
-    p.region_code
-FROM silver.fact_sejour f
+    f.region_code
+FROM gold_pilotage.fact_sejour f
 LEFT JOIN silver.dim_service s ON f.service_code = s.service_code
-LEFT JOIN silver.dim_patient p ON f.patient_pseudo = p.patient_pseudo
 WHERE f.date_sortie IS NULL
 ORDER BY jours_depuis_admission DESC;
 

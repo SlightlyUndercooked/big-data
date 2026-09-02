@@ -101,13 +101,10 @@ WHERE code_cim10 IN (
 -- -----------------------------------------------------------------
 -- KPI 1 : Prévalence des pathologies (taille des cohortes)
 -- -----------------------------------------------------------------
--- Filtre type_diag = 'principal' : mesure la prévalence réelle.
--- Un diagnostic 'associe' représente une comorbidité, pas la raison
--- principale de l'hospitalisation — l'inclure biaise la prévalence.
 --
--- count(DISTINCT patient_pseudo) : compte les patients uniques,
--- pas les occurrences (un même patient peut être hospitalisé plusieurs fois
--- pour la même pathologie).
+-- un même patient peut être hospitalisé plusieurs
+-- fois pour la même pathologie mais un patient porteur de plusieurs
+-- pathologies compte bien dans chaque cohortes concernées.
 --
 -- HAVING >= 5 (règle RGPD petits effectifs) : une pathologie présente
 -- chez moins de 5 patients distincts n'est pas diffusée.
@@ -121,7 +118,6 @@ AS SELECT
     count()                          AS nb_occurrences
 FROM silver.fact_diagnostic d
 LEFT JOIN silver.dim_pathologie p ON d.code_cim10 = p.code_cim10
-WHERE d.type_diag = 'principal'
 GROUP BY d.code_cim10, p.libelle, p.chapitre
 HAVING count(DISTINCT d.patient_pseudo) >= 5
 ORDER BY nb_patients DESC;
@@ -140,6 +136,7 @@ ORDER BY nb_patients DESC;
 -- que la somme des nb_patients mensuels est inférieure au nb_patients
 -- global de v_prevalence_pathologies — les deux vues ne se recoupent pas
 -- exactement, et c'est attendu.
+-- Même convention que v_prevalence_pathologies : tous types de diagnostics.
 CREATE OR REPLACE VIEW gold_recherche.v_prevalence_mensuelle
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
@@ -151,7 +148,6 @@ AS SELECT
     count()                          AS nb_occurrences
 FROM silver.fact_diagnostic d
 LEFT JOIN silver.dim_pathologie p ON d.code_cim10 = p.code_cim10
-WHERE d.type_diag = 'principal'
 GROUP BY mois, d.code_cim10, p.libelle, p.chapitre
 HAVING count(DISTINCT d.patient_pseudo) >= 5
 ORDER BY mois, nb_patients DESC;
@@ -168,6 +164,10 @@ ORDER BY mois, nb_patients DESC;
 --
 -- HAVING >= 5 sur chaque cellule (code × sexe × tranche_age).
 -- Une cellule avec moins de 5 patients est supprimée du résultat.
+--
+-- Même convention que v_prevalence_pathologies (tous types de diagnostics) :
+-- la description démographique porte sur les MÊMES cohortes que la
+-- prévalence, sinon les deux vues ne se recouperaient pas.
 CREATE OR REPLACE VIEW gold_recherche.v_description_cohorte
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT
@@ -180,7 +180,6 @@ AS SELECT
 FROM silver.fact_diagnostic d
 LEFT JOIN silver.dim_patient    p    ON d.patient_pseudo = p.patient_pseudo
 LEFT JOIN silver.dim_pathologie path ON d.code_cim10 = path.code_cim10
-WHERE d.type_diag = 'principal'
 GROUP BY
     d.code_cim10,
     path.libelle,
