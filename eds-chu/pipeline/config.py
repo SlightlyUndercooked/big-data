@@ -22,8 +22,14 @@ def _require(key: str) -> str:
 # Sel de pseudonymisation 
 PIPELINE_SALT: bytes = _require("PIPELINE_SALT").encode()
 
-SOURCE_DIR = Path(_require("SOURCE_DIR"))
-LAKE_DIR   = Path(_require("LAKE_DIR"))
+_ENV_DIR = Path(__file__).parent.parent
+
+def _resolve(key: str) -> Path:
+    p = Path(_require(key))
+    return p if p.is_absolute() else _ENV_DIR / p
+
+SOURCE_DIR = _resolve("SOURCE_DIR")
+LAKE_DIR   = _resolve("LAKE_DIR")
 
 # ClickHouse
 CLICKHOUSE_HOST     = os.environ.get("CLICKHOUSE_HOST", "localhost")
