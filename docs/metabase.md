@@ -37,9 +37,17 @@ Remplir le formulaire :
 | **Display name** | `Pilotage hospitalier` |
 | **Host** | `clickhouse` ← nom du service Docker, **pas** `localhost` |
 | **Port** | `8123` |
-| **Username** | `default` |
-| **Password** | *(laisser vide)* |
+| **Username** | `eds_pilotage` ← **pas** `default` |
+| **Password** | valeur de `GOLD_PILOTAGE_PASSWORD` dans `eds-chu/.env` |
 | **Database name** | `gold_pilotage` |
+
+> **Pourquoi pas le compte `default` ?** `default` est le compte admin : il voit
+> Bronze, Silver et les deux bases Gold. L'utiliser reviendrait à ne cloisonner
+> que l'affichage Metabase — n'importe qui récupérant ces identifiants (ils sont
+> lisibles dans l'écran d'admin Metabase) pourrait interroger ClickHouse
+> directement sur le port 8123 et lire tout l'entrepôt. Le compte `eds_pilotage`
+> est créé par le pipeline (`step4_grants.py`) avec `SELECT` sur `gold_pilotage`
+> et rien d'autre.
 
 Cliquer **Save** puis attendre quelques secondes → **Sync database schema now**.
 
@@ -58,8 +66,8 @@ Même chemin : **Databases** → **Add a database**
 | **Host** | `clickhouse` |
 | **Port** | `8123` |
 | **Database name** | `gold_recherche` |
-| **Username** | `default` |
-| **Password** | *(laisser vide)* |
+| **Username** | `eds_recherche` ← **pas** `default` |
+| **Password** | valeur de `GOLD_RECHERCHE_PASSWORD` dans `eds-chu/.env` |
 
 Cliquer **Save** → **Sync database schema now**.
 
@@ -123,6 +131,87 @@ SELECT count() FROM gold_recherche.fact_diagnostic;
 ```
 
 Depuis Metabase : **New** → **SQL query** → sélectionner `Pilotage hospitalier` → exécuter `SELECT count(*) FROM fact_sejour`.
+
+---
+
+## Étape 8 — Construire les deux dashboards
+
+Les vues Gold sont prêtes à l'emploi : chacune correspond à une carte. Pour chaque
+vue, faire **New** → **Question** → choisir la base → choisir la vue → **Visualize**,
+puis **Save** et l'ajouter au dashboard.
+
+### Dashboard « Pilotage hospitalier » (base `Pilotage hospitalier`)
+
+| Vue | Visualisation suggérée |
+|---|---|
+| `v_data_freshness` | Nombre (afficher `derniere_date_source` et `anciennete_jours`) |
+| `v_sejours_en_cours` | Table, triée sur `jours_depuis_admission` |
+| `v_dms_par_service` | Barres horizontales (`service_label` × `dms_jours`) |
+| `v_dms_par_service_mois` | Courbe (`mois` en X, une série par `service_label`) |
+| `v_activite_urgences` | Courbe (`jour` × `nb_passages`) |
+| `v_taux_readmission_par_service` | Barres (`service_label` × `taux_readmission_pct`) |
+| `v_mortalite` | Table ou barres empilées par `admission_mode` |
+| `v_alertes_monitoring_par_jour` | Courbe (`jour` × `pct_alertes`) |
+| `v_alertes_par_service` | Barres (`service_label` × `pct_alertes`) |
+
+### Dashboard « Recherche clinique » (base `Recherche clinique`)
+
+| Vue | Visualisation suggérée |
+|---|---|
+| `v_prevalence_pathologies` | Barres (`libelle` × `nb_patients`) |
+| `v_prevalence_mensuelle` | Courbe (`mois` en X, une série par `libelle`) |
+| `v_description_cohorte` | Barres empilées (`tranche_age_debut` × `nb_patients`, série = `sex`) |
+| `v_comorbidites` | Table triée sur `nb_patients`, filtrable sur `code_principal` |
+
+---
+
+## Étape 9 — Démontrer le cloisonnement
+
+Le cloisonnement est appliqué à **deux niveaux indépendants**. C'est ce qui permet
+de le démontrer autrement que par une capture d'écran de l'interface.
+
+**Niveau 1 — moteur (ClickHouse).** Les comptes `eds_pilotage` et `eds_recherche`
+n'ont `SELECT` que sur leur base Gold. Ni Bronze, ni Silver, ni `meta`, ni la base
+Gold de l'autre usage. Créés et réappliqués à chaque run par `step4_grants.py`.
+
+**Niveau 2 — application (Metabase).** Les groupes `operationnels` et `chercheurs`
+ne voient que leur connexion respective (étape 5).
+
+Le niveau 1 est celui qui compte : même en contournant Metabase et en tapant
+directement sur le port 8123, l'accès reste refusé. Preuve reproductible :
+
+```bash
+# Depuis eds-chu/, avec les mots de passe du .env
+PIL="http://eds_pilotage:$GOLD_PILOTAGE_PASSWORD@localhost:8123/"
+REC="http://eds_recherche:$GOLD_RECHERCHE_PASSWORD@localhost:8123/"
+
+# Chaque compte ne voit QUE sa base
+curl -s -G "$PIL" --data-urlencode "query=SHOW DATABASES"   # → gold_pilotage
+curl -s -G "$REC" --data-urlencode "query=SHOW DATABASES"   # → gold_recherche
+
+# Croisement interdit → ACCESS_DENIED
+curl -s -G "$REC" --data-urlencode "query=SELECT count() FROM gold_pilotage.fact_sejour"
+curl -s -G "$PIL" --data-urlencode "query=SELECT count() FROM gold_recherche.fact_diagnostic"
+
+# Couches basses inaccessibles → ACCESS_DENIED
+curl -s -G "$REC" --data-urlencode "query=SELECT count() FROM silver.fact_sejour"
+curl -s -G "$PIL" --data-urlencode "query=SELECT count() FROM bronze.sejours"
+```
+
+Le jeu de tests complet, avec les résultats attendus, est dans
+[`tests-gold.md`](tests-gold.md).
+
+> **Point d'architecture — `SQL SECURITY DEFINER`**
+> Les vues Gold lisent `silver.*`, alors que les comptes Gold n'ont aucun droit
+> sur `silver`. Cela fonctionne parce que chaque vue est déclarée
+> `DEFINER = CURRENT_USER SQL SECURITY DEFINER` : elle s'exécute avec les droits
+> de son créateur (le compte admin du pipeline), pas ceux de l'appelant.
+> La vue devient ainsi la frontière de sécurité — on accède aux données
+> uniquement à travers la projection définie, et les colonnes qu'elle exclut
+> (`stay_id`, `service_code`, `region_code` côté recherche) sont réellement
+> inatteignables, pas seulement masquées.
+> Sans cette clause, toutes les requêtes Metabase échoueraient en
+> « Not enough privileges ».
 
 ---
 

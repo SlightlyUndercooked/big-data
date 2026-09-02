@@ -11,6 +11,7 @@ Action :
     3. Charge les nouvelles dates en Bronze (step1), incrémental
     4. Reconstruit Silver depuis tout le Bronze (step2)
     5. Recrée les vues Gold (step3)
+    6. Applique le cloisonnement des accès Gold (step4)
 
 Le pipeline est conçu pour être rejoué quotidiennement (cron).
 
@@ -27,6 +28,7 @@ from .step0_lake import copy_date_to_lake, copy_referentiels
 from .step1_bronze import init_bronze, load_bronze, load_referentiels
 from .step2_silver import build_silver
 from .step3_gold import build_gold
+from .step4_grants import build_grants
 
 logging.basicConfig(
     level=logging.INFO,
@@ -108,6 +110,12 @@ def run() -> None:
     # après Bronze mais avant Silver.
     build_silver(ch)
     build_gold(ch)
+
+    # Les droits sont réappliqués à chaque run : CREATE OR REPLACE VIEW
+    # ne détruit pas les GRANT (ils portent sur la base, pas sur l'objet),
+    # mais rejouer garantit que le .env reste la source de vérité des mots
+    # de passe et qu'un compte supprimé à la main est recréé.
+    build_grants(ch)
 
     log.info("=" * 60)
     log.info("Pipeline EDS-CHU — terminé avec succès")

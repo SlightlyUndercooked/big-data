@@ -25,8 +25,14 @@ PIPELINE_SALT: bytes = _require("PIPELINE_SALT").encode()
 SOURCE_DIR = Path(_require("SOURCE_DIR"))
 LAKE_DIR   = Path(_require("LAKE_DIR"))
 
-# ClickHouse
+# ClickHouse — compte admin utilisé par le pipeline pour construire les couches
 CLICKHOUSE_HOST     = os.environ.get("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT     = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
 CLICKHOUSE_USER     = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
+
+# Cloisonnement Gold : comptes ClickHouse en lecture seule, un par usage.
+# Ce sont ces comptes que Metabase utilise pour ses deux connexions —
+# jamais le compte admin ci-dessus. Chacun ne voit que sa base Gold.
+GOLD_PILOTAGE_PASSWORD  = _require("GOLD_PILOTAGE_PASSWORD")
+GOLD_RECHERCHE_PASSWORD = _require("GOLD_RECHERCHE_PASSWORD")
