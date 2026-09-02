@@ -75,6 +75,10 @@ Cliquer **Save** → **Sync database schema now**.
 
 ## Étape 4 — Créer les groupes d'utilisateurs
 
+> Automatisable : `python -m pipeline.metabase_setup` (voir étape 8, option A)
+> crée les groupes, les permissions et les utilisateurs de démonstration.
+> Les étapes 4 à 6 ci-dessous documentent l'équivalent manuel.
+
 Chemin : **Admin settings** → **People** → onglet **Groups** → **Create a group**
 
 Créer deux groupes :
@@ -135,6 +139,53 @@ Depuis Metabase : **New** → **SQL query** → sélectionner `Pilotage hospital
 ---
 
 ## Étape 8 — Construire les deux dashboards
+
+### Option A — Création automatique (recommandé)
+
+Le script `pipeline/metabase_setup.py` automatise les **étapes 2 à 6 et 8**
+via l'API REST de Metabase :
+
+- suppression du contenu d'exemple Metabase (Sample Database, « E-commerce Insights »)
+- les deux connexions ClickHouse (étapes 2-3), avec les comptes cloisonnés
+- deux collections, une question par vue Gold avec la visualisation adaptée,
+  et les deux dashboards avec leur mise en page (étape 8)
+- les groupes `operationnels` et `chercheurs` (étape 4)
+- les permissions données **et** collections (étape 5) : chaque groupe ne voit
+  que sa connexion et sa collection
+- deux utilisateurs de démonstration, un par groupe (étape 6) :
+  `pilote@eds-chu.local` et `chercheur@eds-chu.local`
+
+Pré-requis : renseigner dans `eds-chu/.env` les identifiants du compte admin
+créé à l'étape 1 (et, optionnellement, les mots de passe des comptes démo) :
+
+```bash
+METABASE_URL=http://localhost:3001
+METABASE_ADMIN_EMAIL=...
+METABASE_ADMIN_PASSWORD=...
+METABASE_PILOTE_PASSWORD=...
+METABASE_CHERCHEUR_PASSWORD=...
+```
+
+Puis lancer :
+
+```bash
+cd eds-chu/
+python -m pipeline.metabase_setup
+```
+
+Le script est **idempotent** : il retrouve les connexions, groupes, questions
+et dashboards par leur nom et les met à jour au lieu de les dupliquer. On peut
+donc le relancer après chaque évolution des vues Gold.
+
+> **Nuance version open source :** le niveau « Blocked » (la base disparaît
+> totalement de Metabase) est réservé à la version Enterprise. Le script
+> applique donc l'équivalent OSS du « No self-service » : requêtes interdites
+> (`create-queries: no`), téléchargements bloqués et collection masquée.
+> Ce n'est pas un trou de sécurité : le cloisonnement réel est garanti au
+> niveau moteur par `step4_grants.py` (étape 9), et chaque connexion Metabase
+> utilise un compte ClickHouse qui ne peut physiquement lire que sa base Gold.
+
+### Option B — Création manuelle
 
 Les vues Gold sont prêtes à l'emploi : chacune correspond à une carte. Pour chaque
 vue, faire **New** → **Question** → choisir la base → choisir la vue → **Visualize**,

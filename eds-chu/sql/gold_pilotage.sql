@@ -116,7 +116,7 @@ GROUP BY mois, f.service_code, s.service_label
 ORDER BY mois, dms_jours DESC;
 
 -- -----------------------------------------------------------------
--- KPI 2 : Activité des urgences — passages par jour
+-- KPI 2 : Activité urgences — passages par jour
 -- -----------------------------------------------------------------
 CREATE OR REPLACE VIEW gold_pilotage.v_activite_urgences
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
