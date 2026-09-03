@@ -149,21 +149,42 @@ def _copy_monitoring(date_str: str) -> int:
     return t.num_rows
 
 
+def _copy_actes(date_str: str) -> int:
+    src = config.SOURCE_DIR / "actes" / date_str / "actes.parquet"
+    dst = config.LAKE_DIR  / "actes" / date_str / "actes.parquet"
+    if not src.exists() or dst.exists():
+        return 0
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    # Copie brute : pas de PII (stay_id + code d'acte + horodatage).
+    _atomic_copy(src, dst)
+
+    t = pq.read_table(dst)
+    return t.num_rows
+
+
 def copy_referentiels() -> None:
-    """Les référentiels sont déposés une seule fois par le CHU (J0). Copie idempotente."""
+    """Copie tous les référentiels vers le lake, à plat.
+
+    Le CHU ne dépose plus seulement à J0 : le lot 2026-08-29 ajoute
+    description_service.csv et ccam.csv. On parcourt donc TOUS les dossiers
+    de dates, du plus ancien au plus récent, et non le seul premier.
+
+    Écrasement systématique (plus de garde `if not dst.exists()`) : un
+    dépôt récent doit pouvoir corriger un fichier de même nom déposé plus
+    tôt. Le tri chronologique donne la sémantique « le dernier dépôt gagne ».
+    La copie reste atomique, donc un fichier n'est jamais vu à moitié écrit.
+    """
     ref_src = config.SOURCE_DIR / "referentiels"
     ref_dst = config.LAKE_DIR  / "referentiels"
     ref_dst.mkdir(parents=True, exist_ok=True)
 
-    date_dirs = sorted(ref_src.iterdir())
-    if not date_dirs:
+    if not ref_src.exists():
         return
 
-    src_dir = date_dirs[0]
-    for f in src_dir.glob("*.csv"):
-        dst_file = ref_dst / f.name
-        if not dst_file.exists():
-            _atomic_copy(f, dst_file)
+    for src_dir in sorted(p for p in ref_src.iterdir() if p.is_dir()):
+        for f in src_dir.glob("*.csv"):
+            _atomic_copy(f, ref_dst / f.name)
 
 
 def copy_date_to_lake(date_str: str) -> dict:
@@ -177,4 +198,5 @@ def copy_date_to_lake(date_str: str) -> dict:
         "sejours":     _copy_sejours(date_str),
         "diagnostics": _copy_diagnostics(date_str),
         "monitoring":  _copy_monitoring(date_str),
+        "actes":       _copy_actes(date_str),
     }

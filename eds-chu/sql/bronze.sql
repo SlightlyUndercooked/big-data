@@ -117,4 +117,57 @@ CREATE TABLE IF NOT EXISTS bronze.cim10 (
     libelle      String,
     _ingested_at DateTime DEFAULT now()
 ) ENGINE = ReplacingMergeTree(_ingested_at)
-  ORDER BY code_cim10
+  ORDER BY code_cim10;
+
+-- -----------------------------------------------------------------
+-- ÉVOLUTION 2026-08-29 — actes médicaux
+-- -----------------------------------------------------------------
+-- Nouveau flux de faits. Grain : un acte réalisé pendant un séjour.
+--
+-- Le service n'est PAS ici : la source ne porte que stay_id. Il est
+-- rattaché en Silver depuis le séjour (cf. silver.fact_acte).
+--
+-- _source_date = date du DÉPÔT (2026-08-29), pas de l'acte : le fichier
+-- contient des actes du 1er au 29 août. Tout KPI temporel doit donc
+-- grouper sur acte_ts, jamais sur _source_date.
+--
+-- MergeTree simple : un acte est un événement unique, pas de doublon
+-- attendu. ORDER BY (stay_id, acte_ts) sert les requêtes « actes d'un
+-- séjour » et les agrégations chronologiques.
+CREATE TABLE IF NOT EXISTS bronze.actes (
+    stay_id      String,
+    code_ccam    String,
+    acte_ts      DateTime,
+    _source_date Date,
+    _ingested_at DateTime DEFAULT now()
+) ENGINE = MergeTree()
+  ORDER BY (stay_id, acte_ts);
+
+-- -----------------------------------------------------------------
+-- ÉVOLUTION 2026-08-29 — référentiels enrichis
+-- -----------------------------------------------------------------
+-- description_service complète services.csv sans le remplacer : le
+-- référentiel d'origine reste la liste de référence des services.
+-- Table séparée plutôt que colonnes ajoutées à bronze.services, parce
+-- que les deux fichiers ont des cycles de dépôt distincts et que
+-- description_service est INCOMPLET (7 services décrits sur 8).
+--
+-- categorie et pole forment une hiérarchie d'agrégation :
+--   service_label (fin) -> categorie -> pole (large).
+CREATE TABLE IF NOT EXISTS bronze.description_service (
+    service_code  String,
+    categorie     String,
+    capacite_lits UInt16,
+    pole          String,
+    _ingested_at  DateTime DEFAULT now()
+) ENGINE = ReplacingMergeTree(_ingested_at)
+  ORDER BY service_code;
+
+-- Nomenclature des actes. tarif_euros porte la facturation T2A.
+CREATE TABLE IF NOT EXISTS bronze.ccam (
+    code_ccam    String,
+    libelle      String,
+    tarif_euros  UInt32,
+    _ingested_at DateTime DEFAULT now()
+) ENGINE = ReplacingMergeTree(_ingested_at)
+  ORDER BY code_ccam

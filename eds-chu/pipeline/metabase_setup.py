@@ -217,7 +217,10 @@ CARTES_PILOTAGE = [
      "SELECT jour, nb_desaturations, nb_brady_tachycardies, nb_fievres FROM v_alertes_monitoring_par_jour ORDER BY jour",
      "line", {"graph.dimensions": ["jour"],
               "graph.metrics": ["nb_desaturations", "nb_brady_tachycardies", "nb_fievres"]}, HALF, 8),
-    ("Alertes monitoring par service",
+    # Titre explicite : la source ne monitore que la réanimation et la
+    # cardiologie (872 séjours sur 6 729). L'absence des 6 autres services
+    # est une propriété du flux, pas un graphe incomplet.
+    ("Alertes monitoring par service (REA et cardiologie uniquement)",
      "SELECT service_label, nb_desaturations, nb_brady_tachycardies, nb_fievres FROM v_alertes_par_service ORDER BY nb_desaturations + nb_brady_tachycardies + nb_fievres DESC",
      "bar", {"graph.dimensions": ["service_label"],
              "graph.metrics": ["nb_desaturations", "nb_brady_tachycardies", "nb_fievres"],
@@ -225,6 +228,48 @@ CARTES_PILOTAGE = [
     ("Mortalité par service et mode d'admission",
      "SELECT * FROM v_mortalite ORDER BY taux_mortalite_pct DESC",
      "table", {}, HALF, 8),
+    # --- Évolution 2026-08-29 : actes et hiérarchie de services ---
+    # Combo à double axe : le sujet demande le nombre de séjours ET la DMS
+    # sur la même maille. Les deux mesures ont des ordres de grandeur
+    # incompatibles (milliers de séjours contre quelques jours) — sur un axe
+    # unique la DMS serait écrasée à zéro. Barres à gauche, courbe à droite.
+    ("Activité et DMS par catégorie de service",
+     "SELECT categorie, nb_sejours, dms_jours FROM v_activite_par_categorie ORDER BY nb_sejours DESC",
+     "combo", {"graph.dimensions": ["categorie"],
+               "graph.metrics": ["nb_sejours", "dms_jours"],
+               "series_settings": {"dms_jours": {"axis": "right", "display": "line"},
+                                   "nb_sejours": {"axis": "left", "display": "bar"}},
+               "graph.y_axis.title_text": "Séjours",
+               "graph.y_axis.auto_split": True}, HALF, 8),
+    # Pas de carte « par pôle » : sur ce jeu de données elle double la carte
+    # par catégorie. 5 des 6 catégories correspondent à un pôle unique avec
+    # des chiffres identiques ; seule 'medecine' se scinde (Coeur-Poumon /
+    # Cancerologie). La vue gold_pilotage.v_activite_par_pole reste
+    # disponible pour une analyse ponctuelle, mais n'encombre pas le
+    # dashboard avec un graphe quasi identique au précédent.
+    ("Actes par service",
+     "SELECT service_label, nb_actes, nb_actes_par_sejour FROM v_actes_par_service ORDER BY nb_actes DESC",
+     "bar", {"graph.dimensions": ["service_label"], "graph.metrics": ["nb_actes"]}, HALF, 8),
+    # Combo double axe. Tracer nb_actes seul donnerait un graphe plat : la
+    # source répartit les 8 codes quasi uniformément (coefficient de
+    # variation 2,4 %, de 967 à 1038 actes). Le montant, lui, est très
+    # discriminant — les tarifs vont de 25 € à 800 €. La radiographie est
+    # l'acte le plus fréquent et le moins coûteux, l'appendicectomie le
+    # moins fréquent et pèse 30 fois plus en facturation. C'est ce
+    # croisement volume/valeur qui porte l'information de pilotage.
+    ("Répartition des actes par type",
+     "SELECT libelle, nb_actes, montant_total_euros FROM v_actes_par_type ORDER BY montant_total_euros DESC",
+     "combo", {"graph.dimensions": ["libelle"],
+               "graph.metrics": ["nb_actes", "montant_total_euros"],
+               "series_settings": {"montant_total_euros": {"axis": "left", "display": "bar"},
+                                   "nb_actes": {"axis": "right", "display": "line"}},
+               "graph.y_axis.auto_split": True}, HALF, 8),
+    ("Densité d'actes par lit",
+     "SELECT service_label, capacite_lits_service, nb_actes, actes_par_lit FROM v_densite_actes_par_lit ORDER BY actes_par_lit DESC",
+     "bar", {"graph.dimensions": ["service_label"], "graph.metrics": ["actes_par_lit"]}, HALF, 8),
+    ("Montant facturé par service (T2A)",
+     "SELECT service_label, nb_actes, montant_total_euros, montant_moyen_par_sejour FROM v_montant_facture_par_service ORDER BY montant_total_euros DESC",
+     "bar", {"graph.dimensions": ["service_label"], "graph.metrics": ["montant_total_euros"]}, HALF, 8),
     ("Séjours en cours",
      "SELECT * FROM v_sejours_en_cours ORDER BY jours_depuis_admission DESC",
      "table", {}, HALF, 8),
@@ -338,6 +383,25 @@ def _layout(cards_meta: list[tuple], card_ids: list[int]) -> list[dict]:
     return dashcards
 
 
+def archive_orphan_cards(mb: Metabase, coll_id: int, gardees: list[int]) -> None:
+    """Archive les questions de la collection absentes du dashboard courant.
+
+    L'idempotence d'ensure_card repose sur le NOM : renommer une carte en
+    crée donc une nouvelle et laisse l'ancienne dans la collection, où elle
+    reste visible et interrogeable alors qu'elle ne correspond plus à rien.
+    Retirer une carte de CARTES_* produit le même résidu.
+    On archive (pas de suppression) : réversible depuis la corbeille
+    Metabase si le retrait était une erreur.
+    """
+    conserves = set(gardees)
+    for c in mb.get("/card"):
+        if (c.get("collection_id") == coll_id
+                and not c.get("archived")
+                and c["id"] not in conserves):
+            mb.put(f"/card/{c['id']}", {"archived": True})
+            log.info(f"  Question orpheline '{c['name']}' : archivée")
+
+
 def build_dashboard(mb: Metabase, db_id: int, coll_name: str,
                     dash_name: str, cards_meta: list[tuple]) -> int:
     """Construit collection + questions + dashboard. Retourne l'id de la collection."""
@@ -352,6 +416,7 @@ def build_dashboard(mb: Metabase, db_id: int, coll_name: str,
         for name, sql, display, viz, _sx, _sy in cards_meta
     ]
     ensure_dashboard(mb, dash_name, coll_id, _layout(cards_meta, card_ids))
+    archive_orphan_cards(mb, coll_id, card_ids)
     return coll_id
 
 

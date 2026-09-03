@@ -43,6 +43,7 @@ _BRONZE_TABLES_PAR_DATE = (
     "bronze.sejours",
     "bronze.diagnostics",
     "bronze.monitoring",
+    "bronze.actes",
 )
 
 
@@ -62,8 +63,8 @@ def _cleanup_date(ch, date_str: str) -> None:
 
 def _cleanup_referentiels(ch) -> None:
     """TRUNCATE des référentiels (pas de _source_date) avant réinsert."""
-    ch.command("TRUNCATE TABLE IF EXISTS bronze.services")
-    ch.command("TRUNCATE TABLE IF EXISTS bronze.cim10")
+    for table in ("services", "cim10", "description_service", "ccam"):
+        ch.command(f"TRUNCATE TABLE IF EXISTS bronze.{table}")
 
 
 def _already_loaded(ch, date_str: str) -> bool:
@@ -201,25 +202,55 @@ def _load_monitoring(ch, date_str: str) -> int:
     return table.num_rows
 
 
+def _load_actes(ch, date_str: str) -> int:
+    """Charge les actes d'un dépôt (Parquet, même chemin Arrow que monitoring)."""
+    lake_file = config.LAKE_DIR / "actes" / date_str / "actes.parquet"
+    if not lake_file.exists():
+        return 0
+    src_date = date.fromisoformat(date_str)
+
+    table = pq.read_table(lake_file)
+    src_date_col = pa.array([src_date] * table.num_rows, type=pa.date32())
+    table = table.append_column("_source_date", src_date_col)
+    ch.insert_arrow("bronze.actes", table)
+    return table.num_rows
+
+
 def _load_referentiels(ch) -> None:
-    """Charge services et CIM-10 (ReplacingMergeTree côté schéma)."""
+    """Charge les référentiels présents dans le lake.
+
+    Chaque fichier est optionnel : description_service.csv et ccam.csv
+    n'existent qu'à partir du dépôt 2026-08-29. Un référentiel absent est
+    simplement ignoré, ce qui permet de rejouer le pipeline sur un
+    filestorage antérieur à l'évolution sans le faire échouer.
+    """
     ref_dir = config.LAKE_DIR / "referentiels"
 
-    rows_svc = []
-    with open(ref_dir / "services.csv", newline="") as f:
-        for row in csv.DictReader(f):
-            rows_svc.append([row["service_code"], row["service_label"]])
-    ch.insert("bronze.services", rows_svc, column_names=["service_code", "service_label"])
+    def _read(filename: str, columns: list[str], cast: dict = None) -> list[list]:
+        path = ref_dir / filename
+        if not path.exists():
+            return []
+        cast = cast or {}
+        rows = []
+        with open(path, newline="") as f:
+            for row in csv.DictReader(f):
+                rows.append([cast.get(c, str)(row[c]) for c in columns])
+        return rows
 
-    rows_cim = []
-    with open(ref_dir / "cim10.csv", newline="") as f:
-        for row in csv.DictReader(f):
-            rows_cim.append([row["code_cim10"], row["libelle"]])
-    ch.insert("bronze.cim10", rows_cim, column_names=["code_cim10", "libelle"])
+    for table, filename, columns, cast in (
+        ("services",            "services.csv",            ["service_code", "service_label"],                    None),
+        ("cim10",               "cim10.csv",               ["code_cim10", "libelle"],                            None),
+        ("description_service", "description_service.csv", ["service_code", "categorie", "capacite_lits", "pole"], {"capacite_lits": int}),
+        ("ccam",                "ccam.csv",                ["code_ccam", "libelle", "tarif_euros"],              {"tarif_euros": int}),
+    ):
+        rows = _read(filename, columns, cast)
+        if rows:
+            ch.insert(f"bronze.{table}", rows, column_names=columns)
+            log.info(f"  {table:20} : {len(rows)} lignes")
 
 
 def load_bronze(ch, date_str: str) -> bool:
-    """Charge les 4 sources d'une date. True si insertion, False si déjà fait."""
+    """Charge les 5 sources d'une date. True si insertion, False si déjà fait."""
     if _already_loaded(ch, date_str):
         log.info(f"Bronze {date_str} : déjà chargé, ignoré.")
         return False
@@ -245,6 +276,10 @@ def load_bronze(ch, date_str: str) -> bool:
         log.info(f"  monitoring  : {n} lignes")
         total_rows += n
 
+        n = _load_actes(ch, date_str)
+        log.info(f"  actes       : {n} lignes")
+        total_rows += n
+
         _record_run(ch, date_str, "success", total_rows)
         log.info(f"Bronze {date_str} : {total_rows} lignes chargées.")
         return True
@@ -256,10 +291,25 @@ def load_bronze(ch, date_str: str) -> bool:
 
 
 def load_referentiels(ch) -> None:
-    """Charge services et CIM-10. source_date sentinelle : 'referentiels'."""
-    if _already_loaded(ch, "referentiels"):
-        log.info("Référentiels déjà chargés, ignorés.")
-        return
+    """Recharge intégralement les référentiels à chaque run.
+
+    La garde `_already_loaded('referentiels')` a été RETIRÉE. Elle
+    verrouillait définitivement le chargement dès le premier succès :
+    le dépôt 2026-08-29 (description_service, ccam) n'aurait jamais été
+    ingéré, sans le moindre message d'erreur.
+
+    Recharger systématiquement est ici gratuit — une trentaine de lignes
+    au total — et supprime toute une classe de bugs « référentiel périmé ».
+    _cleanup_referentiels vide les tables avant réinsertion, donc
+    l'opération reste idempotente par reconstruction.
+
+    Limite assumée : entre le TRUNCATE et l'INSERT, les tables sont
+    brièvement vides. Sans effet sur un entrepôt mono-utilisateur ; en
+    production on basculerait par EXCHANGE TABLES.
+
+    source_date sentinelle 'referentiels' : conservée pour la traçabilité
+    dans meta.pipeline_runs, mais elle ne pilote plus l'exécution.
+    """
     log.info("Chargement des référentiels...")
     _cleanup_referentiels(ch)
     try:
