@@ -7,6 +7,10 @@ Le modèle de données Gold (star schemas, grains, colonnes) est décrit à part
 [`modele-donnees.md`](modele-donnees.md). Les guides d'usage sont dans
 [`guides/`](guides/lancement.md).
 
+Période lue ici : activité du **1er au 28 août 2026** (jeu synthétique).
+Les ordres de grandeur illustrent le dashboard ; un taux de mortalité à 16 %
+n'est pas celui d'un CHU réel (signalé lorsque cela change nos choix)
+
 ---
 
 ## 1. Architecture et choix techniques
@@ -95,8 +99,11 @@ Le détail des tables est dans [`modele-donnees.md`](modele-donnees.md).
 
 ## 6. Dashboard Pilotage
 
-Public : direction, cadres de santé. Grain principal : **le séjour**.
-Captures à déposer dans `images/pilotage/` sous les noms indiqués.
+Public : direction, cadres de santé, DIM. Grain : **le séjour**.
+Les quatre besoins du cahier (DMS, urgences, réadmission 30 j, constantes
+en alerte) sont là. On y ajoute fraîcheur, tendance de DMS, mortalité,
+séjours en cours : ce sont les vues qu'un établissement ouvre le matin
+s'il a déjà les quatre premiers.
 
 ### Fraîcheur des données
 
@@ -107,31 +114,100 @@ runs en erreur).
 
 ![DMS par service](images/pilotage/dms_par_service.png)
 
-Besoin métier n°1. Barres horizontales : les libellés de service sont longs, l'oeil compare des longueurs. Un camembert n'a aucun sens (la DMS n'est pas une part d'un tout). Uniquement les séjours **terminés** : une durée n'existe qu'à la sortie. Hiérarchie attendue (réa la plus longue, urgences la plus courte), c'est un contrôle de vraisemblance.
+La durée moyenne de séjour est l'indicateur d'occupation
+le plus lu (T2A, lits, sorties). Un service qui s'allonge
+bloque l'amont (urgences, bloc) ; un service trop court peut signaler
+des sorties précoces. On le demande **par service** parce que comparer
+la réa et les urgences n'a de sens que si chacun a sa propre cible.
+
+Sur les séjours terminés uniquement (une durée
+n'existe qu'à la sortie) :
+
+| Service                | DMS  |
+|------------------------|------|
+| Réanimation            | ~9 j |
+| Neurologie / oncologie | ~7 j |
+| Pneumologie            | ~6 j |
+| Cardiologie            | ~5 j |
+| Chirurgie              | ~4 j |
+| Pédiatrie              | ~3 j |
+| Urgences               | ~2 j |
+
+La hiérarchie est celle qu'un cadre attend : réa la plus longue, SAU
+le plus court. C'est aussi un contrôle de vraisemblance du pipeline.
+Barres horizontales : on compare des longueurs, pas des parts d'un tout
+(un camembert n'a aucun sens ici).
+
+La réa monopolise le lit le plus longtemps : c'est
+là que le moindre jour gagné libère le plus de capacité. Les urgences à
+2 jours confirment un rôle de passage, pas d'hospitalisation. Pour
+piloter, on se fixe une cible par service (référentiel ATIH / interne)
+et on ne juge un écart que contre cette cible — pas contre le voisin.
 
 ### DMS par service et par mois
 
 ![DMS par mois](images/pilotage/dms_par_service_par_mois.png)
 
-La photo globale ne dit pas si un service se dégrade. Axe temporel = mois de sortie (convention de pilotage : on rattache la DMS au moment où elle est connue). Une série par service.
+La photo annuelle ne dit pas si un service se dégrade.
+Le mois de sortie est la convention : on rattache la DMS au moment
+où elle est connue.
+
+Tous les services montent d'août à septembre. La réa
+passe d'environ 8 j à près de 14 j.
+
+On ne crie pas à la crise d'occupation. Septembre
+n'est pas un mois plein : n'y figurent que les séjours assez longs pour
+déborder d'août. C'est un biais de composition, pas (encore) la preuve
+que « tout le monde s'allonge ». Le réflexe hôpital : attendre un mois
+complet, puis comparer à N-1, pas à un bout de mois.
 
 ### Activité des urgences
 
 ![Urgences](images/pilotage/activite_urgences_par_jour.png)
 
-Filtre `service_code = 'URGENCES'`, pas `admission_mode = 'urgence'`.
-Beaucoup d'admissions « urgence » atterrissent directement en cardio / neuro sans passer par le SAU : les compter ici fausserait l'activité du service.
-La courbe par jour est plus pertinente car c'est un flux, pas un classement
+Le SAU est le thermostat de l'établissement : un pic
+d'un jour se paie en brancards, en DMS des lits d'aval, en heures
+supplémentaires. On compte les passages dans le service URGENCES,
+pas les admissions en mode « urgence ». Une admission urgence directe
+en cardio n'est pas un passage SAU : la compter ici gonflerait
+artificiellement l'activité du service et fausserait le dimensionnement
+des équipes d'accueil.
+Environ 40 à 70 passages par jour en août, pic
+au-delà de 80 vers le 21. La chute après le 25 n'est pas une embellie :
+c'est la fin du fichier source (28 août).
+Le planning IDE / internat se cale sur la médiane
+(~50–60) et le pic (~80), pas sur le 28 du mois. Un lundi à 80 passages
+sans lits d'aval, c'est le tableau d'un encombrement, pas d'une
+« bonne activité ».
 
 ### Taux de réadmission à 30 jours
 
-C'est un ndicateur global de qualité des soins. Un chiffre, pas un graphique par service : ventiler par le service du nouveau séjour attribuerait la réadmission au mauvais service, celui qui réaccueille, pas celui qui a sorti. Fenêtre 1–30 jours (`lagInFrame`) : le même jour = mutation, pas une réadmission. Tous les séjours au dénominateur (y compris en cours) : la réadmission se juge à l'admission
+C'est l'indicateur de qualité des soins du cahier,
+pas un indicateur d'activité. Une réadmission précoce interroge la
+sortie : traitement incomplet, éducation du patient, relais ville.
+On le donne global, un seul chiffre. Le ventiler par le service
+du nouveau séjour attribuerait la réadmission à celui qui réaccueille,
+pas à celui qui a sorti — souvent un autre.
+
+Fenêtre 1–30 jours après la sortie précédente
+(`lagInFrame`). Le même jour = mutation, pas une réadmission. Tous
+les séjours au dénominateur, y compris en cours : le critère se juge
+à l'admission. Sur cette période : **11,6 %** (780 / 6 729).
+
+1 séjour sur 9 est un retour à moins de 30 jours.
+La direction pose deux questions, pas une : (1) est-ce comparable à
+notre historique et au national ? (2) parmi ces retours, combien
+étaient évitables (insuffisance cardiaque décompensée, plaie
+opératoire) ? Le taux ouvre le dossier ; il ne le clôt pas.
 
 ### Alertes monitoring par jour
 
 ![Alertes par jour](images/pilotage/alertes_monitoring_par_jour.png)
 
-Seuils **cliniques** (Gold), distincts du nettoyage Silver :
+Le cahier demande la surveillance des constantes :
+combien de relevés en alerte par jour, en nombre, pas en %.
+Les seuils sont cliniques (Gold), distincts du nettoyage Silver
+(on a déjà jeté les capteurs à 0 ou 500) :
 
 - SpO2 < 92 % → désaturation
 - FC < 50 ou > 100 → brady / tachycardie
@@ -146,41 +222,131 @@ Avoir trois courbes distinctes (désaturation, brady/tachycardie, fièvre) perme
 
 ![Alertes par service](images/pilotage/alertes_monitoring_par_service.png)
 
-Même ventilation par type, agrégée par service. On voit à la fois le volume et le mix (désaturation vs fièvre n'appellent pas la même action). Le monitoring source n'a pas de `service_code` : la jointure séjour est pré-calculée en Gold pour ne pas la rejouer dans metabase
+Savoir *combien* d'alertes sans savoir *où* ne permet
+pas d'envoyer une équipe. Le monitoring source n'a pas de
+`service_code` : le rattachement au séjour est fait en Gold.
+
+Sur ce jeu, le volume se concentre en ardiologie
+(~2 550 relevés en alerte) devant la réanimation (~750). Le mix
+fièvre / rythme / désaturation est équilibré dans les deux services.
+
+La cardio porte la charge de surveillance : soit
+elle a plus de lits monitorés, soit les capteurs n'équipent pas le
+reste de l'hôpital. Avant d'ouvrir des postes, on vérifie le
+périmètre d'équipement. Un mix plat veut dire qu'on ne « traite » pas
+qu'un seul type d'événement — le protocole d'escalade doit couvrir
+les trois.
 
 ### Mortalité
 
 ![Mortalité](images/pilotage/mortalite_par_service_mode_admission.png)
 
-Table (service et mode d'admission) : la mortalité en urgence et en programmé ne se comparent . Uniquement séjours terminés. Sur ce jeu synthétique le taux est très élevé (16 %) (vient des données pas du calcul)
+Les décès n'existent dans le cahier que comme colonne
+des urgences. Les laisser là rend invisibles les décès en programmé
+ou en mutation. On ventile par service et mode d'admission :
+la mortalité d'une réa en urgence et d'une chir réglée ne se
+comparent pas (case-mix). Uniquement séjours terminés.
+
+Taux global ~16 %. La pédiatrie en programmé sort
+en tête (~22 %), devant la réa (~19 %).
+On ne pilote pas un CHU réel avec ces taux.
+16 % de mortalité hospitalière, et 22 % en pédiatrie programmée, sont
+des artefacts du générateur. Sur un vrai entrepôt, la même vue
+servirait à : (1) écarter les comparaisons urgence / programmé, (2)
+ouvrir une revue de morbi-mortalité là où le taux sort de la cible
+du service, (3) ne jamais classer les services sur un taux brut sans
+ajustement au risque. Ici, elle sert surtout à montrer que le
+pipeline calcule l'indicateur correctement — et qu'il faut lire le
+chiffre avec le case-mix, pas comme un palmarès.
 
 ### Séjours en cours
 
-Liste opérationnelle (qui est là, depuis combien de jours, combien d'alertes), pas un KPI agrégé. `discharge_ts` NULL est légitime. `nb_alertes_monitoring` sur `fact_sejour` existe pour cette vue : un résumé par séjour, sans joindre 40k relevés dans metabse
+C'est la liste du matin : qui est là, depuis combien
+de jours, avec combien d'alertes, dans quel service. `discharge_ts`
+NULL est légitime (patient encore hospitalisé). Ce n'est pas un
+taux, c'est un fichier d'action.
+Grain séjour, trié par ancienneté. `nb_alertes_monitoring`
+est déjà agrégé sur la fact séjour : le cadre n'a pas à croiser
+40 000 relevés.
+
+Un séjour à 20 jours en médecine avec un
+compteur d'alertes qui monte, c'est un appel à la visite, pas un
+point au COPIL. La direction regarde le stock (combien de lits
+encore occupés) ; le cadre de santé ouvre la ligne.
 
 ---
 
 ## 7. Dashboard Recherche
 
-Public : épidémiologistes. Grain : une occurrence de diagnostic
+Public : épidémiologistes, investigateurs. Grain : **une occurrence
+de diagnostic**. Objectif du cahier : tailles de cohortes et
+description âge × sexe. On ajoute la tendance mensuelle et les
+comorbidités : sans elles, on sait combien de diabétiques, pas
+avec quoi ils rentrent, ni si ça bouge.
+
+Les cohortes de moins de 5 patients distincts sont masquées (`HAVING`
+et filtre sur la fact). Un chercheur ne reconstitue pas un cas rare
+en réagrégeant la table.
 
 ### Prévalence des pathologies
 
 ![Prévalence](images/recherche/prevalence_pathologies.png)
 
-Taille de cohorte = patients distincts, tous types de diagnostics (principal et associé) : un diabétique hospitalisé pour un infarctus appartient à la cohorte diabète. Un patient multi-pathologies compte dans chaque cohorte. Les barres horizontales sont plus pertinentes car les libellés CIM-10 sont longs. Le classement est fait par par volume. `HAVING >= 5` : mucoviscidose et trisomie 21 masquées sur ce jeu pour éviter l'identification des patients
+Première question d'un EDS : « de quoi est faite notre
+file active ? » La taille de cohorte = patients distincts, tous
+types de diagnostics (principal et associé). Un diabétique
+hospitalisé pour un infarctus appartient à la cohorte diabète : c'est
+sa maladie chronique, même si ce n'est pas le motif d'entrée. Un
+patient multi-pathologies compte dans chaque cohorte.
+
+Quatre volumes dominent : infections urinaires
+(~2 200 patients), diabète de type 2 (~2 150), insuffisance cardiaque
+(~2 150), BPCO (~1 800). Plus loin : pneumonies, dépression,
+appendicite, AVC. Mucoviscidose et trisomie 21 n'apparaissent pas
+(`HAVING >= 5`).
+
+L'eds de cet établissement, sur ce mois, est un
+EDS de maladies chroniques de l'adulte plus que de maladies rares.
+Un promoteur qui cherche 50 BPCO les trouvera ; un promoteur qui
+cherche 5 mucoviscidoses devra passer par un registre, pas par cette
+vue. Pour le DIM : IVU + IC + diabète, c'est le portrait d'une
+médecine interne gériatrique — les essais et les parcours ville-hôpital
+se calent là-dessus.
 
 ### Prévalence mensuelle
 
 ![Prévalence mensuelle](images/recherche/prevalence_mensuelle_par_pathologie.png)
 
-Pour détecter des tendances ou saisonnalités (photo globale sur l'axe du temps). Le seuil >= 5 est appliqué à chaque cellule (mois x pathologie) pour protéger la confidentialité : ainsi, la somme des valeurs mensuelles n'est pas égale au total global
+La photo globale ne détecte ni saisonnalité (grippe,
+bronchiolite) ni signal épidémique. Le seuil ≥ 5 s'applique à
+chaque cellule mois × pathologie, pas au total : la somme des
+mois n'égale pas le global, et c'est voulu.
+
+On suit les mêmes grosses cohortes dans le temps,
+sans faire réapparaître un code rare un mois donné.
+Un chercheur qui voit une pente sur la BPCO
+interroge un vrai changement (décompensation hivernale, recrutement)
+avant de figer une cohorte d'essai. Un mois à 4 patients pour un
+code fréquent est absent : on ne publie pas un effectif 4.
 
 ### Description de cohorte
 
 ![Cohorte](images/recherche/descriptions_cohorte.png)
 
-Tranches de 10 ans (généralisation) plutôt que l'âge exact. Empilé M/F : pyramide simplifiée, lisible en une carte. Mêmes cohortes que la prévalence (tous types de diagnostics), sinon les deux vues divergeraient
+Le cahier demande âge et sexe. Sans ça, on ne sait pas
+si une cohorte « 2 000 diabétiques » est pédiatrique ou gériatrique —
+le protocole n'est pas le même. Tranches de 10 ans plutôt que l'âge
+exact (minimisation). Mêmes règles de comptage que la prévalence
+(tous types de diagnostics), sinon les deux vues parleraient de
+populations différentes.
+
+Pyramide décalée vers les 50–80 ans, pic vers 60 ans
+(~2 400 patients sur l'ensemble des codes affichés), sexes à peu près
+équilibrés.
+Les études menées sur cet EDS devront prévoir
+des critères d'âge hauts, des interactions médicamenteuses, des
+comorbidités — pas une cohorte d'adultes jeunes. Un essai pédiatrique
+ne se nourrit pas de cette pyramide.
 
 ### Comorbidités
 
