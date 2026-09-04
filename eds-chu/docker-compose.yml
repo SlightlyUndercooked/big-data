@@ -23,7 +23,7 @@ services:
 
   # http://localhost:3001
   # Driver ClickHouse : ./metabase-plugins/clickhouse.metabase-driver.jar
-  # Connexions : python -m pipeline.metabase_setup
+  # Connexions : docker compose exec pipeline python -m pipeline.metabase_setup
   #   host = clickhouse (réseau Docker, pas localhost)
   #   comptes eds_pilotage / eds_recherche — pas default
   metabase:
@@ -40,6 +40,33 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+
+  # Relance quotidienne (cron 06:00 Europe/Paris) + un run au démarrage.
+  # Logs : docker compose logs -f pipeline
+  # Run manuel : docker compose exec pipeline python -m pipeline.run
+  pipeline:
+    build: .
+    env_file: .env
+    environment:
+      TZ: Europe/Paris
+      CLICKHOUSE_HOST: clickhouse
+      SOURCE_DIR: /data/source
+      LAKE_DIR: /data/lake
+      METABASE_URL: http://metabase:3000
+      CRON_SCHEDULE: "${CRON_SCHEDULE:-0 6 * * *}"
+      RUN_ON_START: ${RUN_ON_START:-1}
+    volumes:
+      - type: bind
+        source: ${SOURCE_DIR}
+        target: /data/source
+        read_only: true
+      - type: bind
+        source: ${LAKE_DIR}
+        target: /data/lake
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   clickhouse_data:

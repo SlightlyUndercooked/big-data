@@ -3,21 +3,13 @@
 ## Pré-requis
 
 - Docker + Docker Compose
-- Python 3.11+
 - Les fichiers source dans `source-filestorage/` (lecture seule, fournis par le CHU)
 
 ---
 
 ## Premier lancement (une seule fois)
 
-### 1. Installer les dépendances Python
-
-```bash
-cd eds-chu/
-pip install -r requirements.txt
-```
-
-### 2. Configurer l'environnement
+### 1. Configurer l'environnement
 
 ```bash
 cp .env.example .env
@@ -33,48 +25,64 @@ CLICKHOUSE_HOST=localhost
 CLICKHOUSE_PORT=8123
 CLICKHOUSE_USER=default
 CLICKHOUSE_PASSWORD=
+CRON_SCHEDULE=*/5 * * * *   # toues les 5min
+RUN_ON_START=1            # 1 = run dès le démarrage
 ```
 
 > **Important :** le `PIPELINE_SALT` génère tous les pseudonymes patients. Le changer invalide toutes les jointures existantes.
 
-### 3. Télécharger le driver ClickHouse pour Metabase
+`SOURCE_DIR` et `LAKE_DIR` restent des chemins **hôte** : Docker les monte dans le conteneur pipeline.
+
+### 2. Télécharger le driver ClickHouse pour Metabase
 
 ```bash
 curl -L https://github.com/ClickHouse/metabase-clickhouse-driver/releases/download/1.53.4/clickhouse.metabase-driver.jar \
      -o metabase-plugins/clickhouse.metabase-driver.jar
 ```
 
-### 4. Démarrer les containers
+### 3. Démarrer la stack
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 - ClickHouse : http://localhost:8123/play (interface SQL)
 - Metabase : http://localhost:3001 (dashboards) — démarre en ~2 min
+- Pipeline : un premier run part tout seul, puis un cron toutes les 5min
 
-### 5. Lancer le pipeline
-
-```bash
-python -m pipeline.run
-```
-
-Ce que fait le pipeline :
+Ce que fait le pipeline à chaque run :
 1. Copie les fichiers source vers `lake/` en supprimant les PII (nom, prénom, NIR) et en pseudonymisant les identifiants patients
 2. Charge les fichiers du lake dans ClickHouse (couche Bronze)
 3. Reconstruit les tables nettoyées (couche Silver)
 4. Recrée les vues analytiques (couche Gold)
 
----
-
-## Lancement quotidien (run incrémental)
+Suivre le premier run :
 
 ```bash
-cd eds-chu/
-python -m pipeline.run
+docker compose logs -f pipeline
 ```
 
-Le pipeline détecte automatiquement les nouvelles dates dans `source-filestorage/` et ne recharge pas ce qui est déjà en Bronze.
+---
+
+## Planification (cron)
+
+Le conteneur `pipeline` tourne en permanence tant que la stack est up (`restart: unless-stopped`). Il n'y a rien à relancer à la main.
+
+| Moment | Comportement |
+|--------|----------------|
+| `docker compose up` | un run immédiat (`RUN_ON_START=1`) |
+| Tous les jours à 6 h | cron (`CRON_SCHEDULE`, fuseau `Europe/Paris`) |
+| Nouvelle date dans `source-filestorage/` | chargée en Bronze au prochain run ; les dates déjà en `success` sont ignorées |
+
+Forcer un run sans attendre le cron :
+
+```bash
+docker compose exec pipeline python -m pipeline.run
+```
+
+Un verrou fichier empêche deux runs en parallèle (cron + relance manuelle).
+
+La machine (et Docker) doivent rester allumés : un cron ne tourne pas sur un appareil éteint.
 
 ---
 
@@ -88,7 +96,7 @@ Une fois le compte admin créé (et ses identifiants renseignés dans `.env`),
 les connexions, questions et dashboards se créent automatiquement :
 
 ```bash
-python -m pipeline.metabase_setup
+docker compose exec pipeline python -m pipeline.metabase_setup
 ```
 
 ---
@@ -129,14 +137,20 @@ docker compose restart clickhouse
 ```
 
 **Le pipeline échoue en cours de route :**
-Le statut `error` est enregistré dans `meta.pipeline_runs`. Relancer simplement `python -m pipeline.run` après avoir corrigé le problème — les dates déjà chargées en Bronze sont ignorées, Silver et Gold sont reconstruits.
+Le statut `error` est enregistré dans `meta.pipeline_runs`. Relancer après correction :
+
+```bash
+docker compose logs pipeline
+docker compose exec pipeline python -m pipeline.run
+```
+
+Les dates déjà chargées en Bronze sont ignorées, Silver et Gold sont reconstruits.
 
 **Repartir de zéro (reset complet) :**
 ```bash
 docker compose down -v          # supprime les volumes ClickHouse
 rm -rf lake/                    # supprime le lake local
-docker compose up -d
-python -m pipeline.run
+docker compose up -d --build    # le pipeline se relance tout seul
 ```
 
 > Cela ne touche pas les fichiers source (lecture seule).

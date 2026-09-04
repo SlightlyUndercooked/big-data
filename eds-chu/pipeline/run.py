@@ -12,10 +12,12 @@ Action :
     6. Applique le cloisonnement des accès Gold (step4)
 
 Le pipeline est conçu pour être rejoué quotidiennement (cron).
+Un verrou fichier empêche deux runs simultanés (cron + relance manuelle).
 
 Traçabilité : chaque run Bronze est enregistré dans meta.pipeline_runs
 En cas d'erreur, le statut 'error' est enregistré et le run s'arrête.
 """
+import fcntl
 import logging
 import sys
 
@@ -34,6 +36,20 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+# Conservé ouvert pendant tout le process : fermer le fd relâcherait le verrou.
+_lock_fh = None
+
+
+def _acquire_lock() -> None:
+    """Refuse un second run si le pipeline tourne déjà (cron + manuel)."""
+    global _lock_fh
+    _lock_fh = open("/tmp/eds-chu-pipeline.lock", "w")
+    try:
+        fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        log.warning("Un autre run du pipeline est déjà en cours. On arrêteeee")
+        sys.exit(0)
 
 
 def _discover_source_dates() -> list[str]:
@@ -70,6 +86,7 @@ def _get_client():
 
 
 def run() -> None:
+    _acquire_lock()
     log.info("=" * 60)
     log.info("Pipeline EDS-CHU — démarrage")
     log.info(f"Source : {config.SOURCE_DIR}")

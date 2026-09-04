@@ -10,7 +10,7 @@ Avant d'ouvrir Metabase, s'assurer que :
 
 1. Le container tourne : `docker compose ps` → `metabase` en état `Up`
 2. Le driver ClickHouse est chargé : `docker compose logs metabase | grep clickhouse` doit afficher `Registered driver :clickhouse`
-3. Le pipeline a été exécuté au moins une fois (`python -m pipeline.run`) → les bases `gold_pilotage` et `gold_recherche` existent dans ClickHouse
+3. Le pipeline a été exécuté au moins une fois (`docker compose logs pipeline`) → les bases `gold_pilotage` et `gold_recherche` existent dans ClickHouse
 
 ---
 
@@ -75,7 +75,7 @@ Cliquer **Save** → **Sync database schema now**.
 
 ## Étape 4 — Créer les groupes d'utilisateurs
 
-> Automatisable : `python -m pipeline.metabase_setup` (voir étape 8, option A)
+> Automatisable : `docker compose exec pipeline python -m pipeline.metabase_setup` (voir étape 8, option A)
 > crée les groupes, les permissions et les utilisateurs de démonstration.
 > Les étapes 4 à 6 ci-dessous documentent l'équivalent manuel.
 
@@ -169,8 +169,7 @@ METABASE_CHERCHEUR_PASSWORD=...
 Puis lancer :
 
 ```bash
-cd eds-chu/
-python -m pipeline.metabase_setup
+docker compose exec pipeline python -m pipeline.metabase_setup
 ```
 
 Le script est **idempotent** : il retrouve les connexions, groupes, questions
