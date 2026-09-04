@@ -39,15 +39,15 @@ log = logging.getLogger(__name__)
 def _discover_source_dates() -> list[str]:
     """Trouve toutes les dates disponibles, toutes tables confondues.
 
-    Union des dates présentes dans patients/, sejours/, diagnostics/ et
-    monitoring/ : les tables ne couvrent pas forcément les mêmes périodes
+    Union des dates présentes dans patients/, sejours/, diagnostics/,
+    monitoring/ et actes/ : les tables ne couvrent pas forcément les mêmes périodes
     (ex: patients déposé en photo complète sur les derniers jours seulement,
     alors que l'historique d'activité remonte plus loin). Une date est
     traitée dès qu'au moins une table a des données pour elle ; les fichiers
     manquants pour les autres tables sont simplement ignorés (step0/step1).
     Les dates sont triées pour garantir un chargement chronologique.
     """
-    tables = ("patients", "sejours", "diagnostics", "monitoring")
+    tables = ("patients", "sejours", "diagnostics", "monitoring", "actes")
     dates: set[str] = set()
     for table in tables:
         table_dir = config.SOURCE_DIR / table

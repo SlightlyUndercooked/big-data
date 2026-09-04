@@ -260,4 +260,203 @@ AS SELECT
     countIf(status = 'error')                                   AS nb_runs_error,
     sum(rows_processed)                                         AS nb_lignes_chargees
 FROM meta.pipeline_runs
-WHERE layer = 'bronze'
+WHERE layer = 'bronze';
+
+-- ===================================================================
+-- ÉVOLUTION 2026-08-29 — actes médicaux et hiérarchie de services
+-- ===================================================================
+-- Même convention que le reste du fichier : les FACTS lisent Silver,
+-- les vues KPI ne lisent que Gold. Conséquence pratique : fact_acte
+-- résout une fois pour toutes les jointures vers dim_ccam et
+-- dim_service, et les cinq KPI ci-dessous n'ont plus aucune jointure
+-- à faire — ni fan trap possible, ni divergence de typage entre la
+-- création de la vue et sa lecture.
+
+CREATE OR REPLACE VIEW gold_pilotage.dim_ccam
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT * FROM silver.dim_ccam;
+
+-- fact_acte porte déjà service_code, dénormalisé en Silver depuis le
+-- SÉJOUR (la source ne l'a pas). On y ajoute ici les attributs de
+-- dimension pour que les KPI se lisent sans jointure.
+--
+-- Alias explicites sur code_ccam et service_code : ces noms existent
+-- dans plusieurs tables de la jointure, et ClickHouse préfixerait sinon
+-- la colonne de sortie (« a.code_ccam »), point compris, jusque dans
+-- Metabase.
+CREATE OR REPLACE VIEW gold_pilotage.fact_acte
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    a.stay_id       AS stay_id,
+    a.code_ccam     AS code_ccam,
+    c.libelle       AS libelle_acte,
+    c.tarif_euros   AS tarif_euros,
+    a.acte_ts       AS acte_ts,
+    a.date_acte     AS date_acte,
+    a.service_code  AS service_code,
+    s.service_label AS service_label,
+    s.categorie     AS categorie,
+    s.pole          AS pole,
+    s.capacite_lits AS capacite_lits
+FROM silver.fact_acte a
+LEFT JOIN silver.dim_ccam    c ON a.code_ccam    = c.code_ccam
+LEFT JOIN silver.dim_service s ON a.service_code = s.service_code;
+
+-- -----------------------------------------------------------------
+-- KPI 7 : Activité et DMS par CATÉGORIE de service
+-- -----------------------------------------------------------------
+-- LA HIÉRARCHIE N'EST PAS UN ARBRE — constat sur les données
+--   Le sujet présente service_label -> categorie -> pole comme trois
+--   niveaux d'agrégation croissants, ce qui suggère un emboîtement
+--   strict. Les données le contredisent : la catégorie 'medecine'
+--   couvre DEUX pôles (Coeur-Poumon pour CARDIO et PNEUMO,
+--   Cancerologie pour ONCO). Dans l'autre sens, chaque pôle ne porte
+--   bien qu'une seule catégorie.
+--   categorie et pole sont donc deux regroupements INDÉPENDANTS des
+--   services, pas deux étages d'une même pyramide. Grouper sur le
+--   couple scinderait 'medecine' en deux lignes et fausserait la
+--   lecture « par catégorie » demandée : on groupe sur categorie
+--   SEULE, et le pôle a sa propre vue.
+--
+-- NEURO remonte sous 'non renseigne' (référentiel descriptif incomplet).
+-- Délibéré : la ligne rend le trou visible plutôt que de faire
+-- disparaître 18 % de l'activité. Voir silver.dim_service.
+--
+-- nb_sejours compte TOUS les séjours ; dms_jours ne porte que sur les
+-- séjours terminés (durée inconnue tant que le patient est là). Les
+-- deux colonnes n'ont pas le même dénominateur, d'où
+-- nb_sejours_termines exposé à part.
+CREATE OR REPLACE VIEW gold_pilotage.v_activite_par_categorie
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    s.categorie                                          AS categorie,
+    count()                                              AS nb_sejours,
+    countIf(f.date_sortie IS NOT NULL)                   AS nb_sejours_termines,
+    round(avgIf(f.duree_sejour_jours, f.date_sortie IS NOT NULL), 1) AS dms_jours,
+    uniqExact(f.service_code)                            AS nb_services
+FROM gold_pilotage.fact_sejour f
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
+GROUP BY s.categorie
+ORDER BY nb_sejours DESC;
+
+-- Troisième niveau d'agrégation. Vue distincte plutôt que colonne
+-- supplémentaire, puisque categorie et pole ne s'emboîtent pas.
+-- Pas de capacité totale ici : fact_sejour porte un séjour par ligne,
+-- donc sum(capacite_lits) additionnerait les lits une fois PAR SÉJOUR.
+CREATE OR REPLACE VIEW gold_pilotage.v_activite_par_pole
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    s.pole                                               AS pole,
+    count()                                              AS nb_sejours,
+    countIf(f.date_sortie IS NOT NULL)                   AS nb_sejours_termines,
+    round(avgIf(f.duree_sejour_jours, f.date_sortie IS NOT NULL), 1) AS dms_jours,
+    uniqExact(f.service_code)                            AS nb_services
+FROM gold_pilotage.fact_sejour f
+LEFT JOIN gold_pilotage.dim_service s ON f.service_code = s.service_code
+GROUP BY s.pole
+ORDER BY nb_sejours DESC;
+
+-- -----------------------------------------------------------------
+-- KPI 8 : Nombre d'actes par service
+-- -----------------------------------------------------------------
+-- Aucune jointure : fact_acte porte déjà le service (dénormalisé depuis
+-- le séjour en Silver). C'est ce qui évite de relier fact_acte à
+-- fact_sejour — deux faits de grains différents, dont la jointure
+-- dupliquerait chaque séjour autant de fois qu'il a d'actes (fan trap).
+--
+-- nb_actes_par_sejour : moyenne sur les séjours AYANT AU MOINS UN ACTE.
+-- Un séjour sans acte ne doit pas diluer l'intensité du plateau technique.
+CREATE OR REPLACE VIEW gold_pilotage.v_actes_par_service
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    service_code,
+    any(service_label)                       AS service_label,
+    any(categorie)                           AS categorie,
+    count()                                  AS nb_actes,
+    uniqExact(stay_id)                       AS nb_sejours_avec_acte,
+    round(count() / uniqExact(stay_id), 2)   AS nb_actes_par_sejour,
+    uniqExact(code_ccam)                     AS nb_types_actes,
+    sum(tarif_euros)                         AS montant_total_euros
+FROM gold_pilotage.fact_acte
+GROUP BY service_code
+ORDER BY nb_actes DESC;
+
+-- -----------------------------------------------------------------
+-- KPI 9 : Répartition des actes par type
+-- -----------------------------------------------------------------
+-- Volume et poids financier ensemble : un acte fréquent et peu cher
+-- (radiographie, 25 €) ne pèse pas comme un acte rare et coûteux
+-- (appendicectomie, 800 €).
+CREATE OR REPLACE VIEW gold_pilotage.v_actes_par_type
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    code_ccam,
+    any(libelle_acte)                        AS libelle,
+    -- Alias volontairement DIFFÉRENT du nom de colonne source : un
+    -- `any(tarif_euros) AS tarif_euros` masquerait la colonne, et le
+    -- `sum(tarif_euros)` plus bas serait résolu en sum(any(...)) —
+    -- ClickHouse refuse alors l'agrégat imbriqué (code 184).
+    any(tarif_euros)                         AS tarif_unitaire_euros,
+    count()                                  AS nb_actes,
+    uniqExact(stay_id)                       AS nb_sejours,
+    sum(tarif_euros)                         AS montant_total_euros,
+    round(100.0 * count() / (SELECT count() FROM gold_pilotage.fact_acte), 1) AS pct_des_actes
+FROM gold_pilotage.fact_acte
+GROUP BY code_ccam
+ORDER BY nb_actes DESC;
+
+-- -----------------------------------------------------------------
+-- KPI 10 : Densité d'actes par lit
+-- -----------------------------------------------------------------
+-- Rapporter le volume d'actes à la capacité permet de comparer des
+-- services de tailles différentes.
+--
+-- capacite_lits est NULL pour NEURO (service non décrit). La division
+-- propage le NULL : la densité reste VIDE au lieu d'afficher un chiffre
+-- faux. C'est pour cela que Silver n'a pas mis 0 — un
+-- coalesce(capacite_lits, 0) aurait produit une division par zéro, ou
+-- pire une densité astronomique passant pour un résultat réel.
+--
+-- actes_par_lit_par_jour : rapporté aux 29 jours couverts par le dépôt
+-- d'actes (2026-08-01 -> 2026-08-29). Valeur à revoir si la période
+-- change.
+CREATE OR REPLACE VIEW gold_pilotage.v_densite_actes_par_lit
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    service_code,
+    any(service_label)                            AS service_label,
+    any(categorie)                                AS categorie,
+    -- Alias distinct du nom source, pour la même raison qu'en KPI 9.
+    any(capacite_lits)                            AS capacite_lits_service,
+    count()                                       AS nb_actes,
+    round(count() / any(capacite_lits), 1)        AS actes_par_lit,
+    round(count() / any(capacite_lits) / 29, 2)   AS actes_par_lit_par_jour
+FROM gold_pilotage.fact_acte
+GROUP BY service_code
+ORDER BY actes_par_lit DESC;
+
+-- -----------------------------------------------------------------
+-- KPI 11 : Montant facturé par service (T2A)
+-- -----------------------------------------------------------------
+-- tarif_euros vient de la DIMENSION dim_ccam : c'est un attribut du
+-- type d'acte, identique pour toutes ses occurrences. On l'agrège au
+-- lieu de le stocker sur chaque ligne de fait.
+--
+-- « Facturé » au sens tarif de nomenclature : aucune modulation
+-- (coefficient géographique, sévérité GHM...). Ordre de grandeur
+-- d'activité, pas une facturation opposable.
+CREATE OR REPLACE VIEW gold_pilotage.v_montant_facture_par_service
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT
+    service_code,
+    any(service_label)                                  AS service_label,
+    any(categorie)                                      AS categorie,
+    any(pole)                                           AS pole,
+    count()                                             AS nb_actes,
+    sum(tarif_euros)                                    AS montant_total_euros,
+    round(avg(tarif_euros), 2)                          AS tarif_moyen_euros,
+    uniqExact(stay_id)                                  AS nb_sejours,
+    round(sum(tarif_euros) / uniqExact(stay_id), 2)     AS montant_moyen_par_sejour
+FROM gold_pilotage.fact_acte
+GROUP BY service_code
+ORDER BY montant_total_euros DESC

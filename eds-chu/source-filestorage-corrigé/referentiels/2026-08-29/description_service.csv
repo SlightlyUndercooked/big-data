@@ -1,0 +1,8 @@
+service_code,categorie,capacite_lits,pole
+CARDIO,medecine,30,Coeur-Poumon
+URGENCES,urgences,20,Urgences
+PNEUMO,medecine,28,Coeur-Poumon
+ONCO,medecine,35,Cancerologie
+PEDIA,pediatrie,22,Femme-Enfant
+CHIR,chirurgie,40,Chirurgie
+REA,reanimation,16,Soins critiques
