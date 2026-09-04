@@ -249,7 +249,7 @@ curl -s -G "$PIL" --data-urlencode "query=SELECT count() FROM bronze.sejours"
 ```
 
 Le cloisonnement moteur et les choix de visualisation sont détaillés dans
-le [rapport partie 1](../rapport.md).
+le [rapport](../../rapport.md).
 
 > **Point d'architecture — `SQL SECURITY DEFINER`**
 > Les vues Gold lisent `silver.*`, alors que les comptes Gold n'ont aucun droit
