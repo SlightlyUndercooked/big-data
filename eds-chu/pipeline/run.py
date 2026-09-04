@@ -19,6 +19,7 @@ En cas d'erreur, le statut 'error' est enregistré et le run s'arrête.
 """
 import fcntl
 import logging
+import re
 import sys
 
 import clickhouse_connect
@@ -39,17 +40,37 @@ log = logging.getLogger(__name__)
 
 # Conservé ouvert pendant tout le process : fermer le fd relâcherait le verrou.
 _lock_fh = None
+_DATE_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class PipelineError(Exception):
+    """Erreur attendue (config, chemins, ClickHouse) — message suffisant, pas de traceback."""
 
 
 def _acquire_lock() -> None:
     """Refuse un second run si le pipeline tourne déjà (cron + manuel)."""
     global _lock_fh
-    _lock_fh = open("/tmp/eds-chu-pipeline.lock", "w")
     try:
+        _lock_fh = open("/tmp/eds-chu-pipeline.lock", "w")
         fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         log.warning("Un autre run du pipeline est déjà en cours. On arrêteeee")
         sys.exit(0)
+    except OSError as exc:
+        raise PipelineError(f"Impossible de poser le verrou pipeline : {exc}") from exc
+
+
+def _check_paths() -> None:
+    if not config.SOURCE_DIR.is_dir():
+        raise PipelineError(
+            f"SOURCE_DIR introuvable ou n'est pas un dossier : {config.SOURCE_DIR}"
+        )
+    try:
+        config.LAKE_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise PipelineError(
+            f"Impossible de créer LAKE_DIR ({config.LAKE_DIR}) : {exc}"
+        ) from exc
 
 
 def _discover_source_dates() -> list[str]:
@@ -67,26 +88,44 @@ def _discover_source_dates() -> list[str]:
     dates: set[str] = set()
     for table in tables:
         table_dir = config.SOURCE_DIR / table
-        if table_dir.exists():
-            dates.update(p.name for p in table_dir.iterdir() if p.is_dir())
+        if not table_dir.is_dir():
+            continue
+        for p in table_dir.iterdir():
+            if not p.is_dir():
+                continue
+            if _DATE_DIR.match(p.name):
+                dates.add(p.name)
+            else:
+                log.warning(f"Ignoré (nom de dossier n'est pas une date ISO) : {p}")
     if not dates:
-        raise FileNotFoundError(
-            f"Aucune date trouvée dans {config.SOURCE_DIR} (dossiers {tables})"
+        raise PipelineError(
+            f"Aucune date AAAA-MM-JJ trouvée dans {config.SOURCE_DIR} "
+            f"(dossiers {tables})"
         )
     return sorted(dates)
 
 
 def _get_client():
-    return clickhouse_connect.get_client(
-        host=config.CLICKHOUSE_HOST,
-        port=config.CLICKHOUSE_PORT,
-        username=config.CLICKHOUSE_USER,
-        password=config.CLICKHOUSE_PASSWORD,
-    )
+    try:
+        client = clickhouse_connect.get_client(
+            host=config.CLICKHOUSE_HOST,
+            port=config.CLICKHOUSE_PORT,
+            username=config.CLICKHOUSE_USER,
+            password=config.CLICKHOUSE_PASSWORD,
+            connect_timeout=10,
+        )
+        client.query("SELECT 1")
+        return client
+    except Exception as exc:
+        raise PipelineError(
+            f"ClickHouse injoignable "
+            f"({config.CLICKHOUSE_HOST}:{config.CLICKHOUSE_PORT}) : {exc}"
+        ) from exc
 
 
 def run() -> None:
     _acquire_lock()
+    _check_paths()
     log.info("=" * 60)
     log.info("Pipeline EDS-CHU — démarrage")
     log.info(f"Source : {config.SOURCE_DIR}")
@@ -94,42 +133,47 @@ def run() -> None:
     log.info("=" * 60)
 
     ch = _get_client()
+    try:
+        init_bronze(ch)
 
-    init_bronze(ch)
+        # Les référentiels (services, CIM-10) sont déposés une seule fois par le CHU.
+        # copy_referentiels copie vers le lake, load_referentiels insère dans Bronze.
+        # Les deux opérations sont idempotentes : rejouer ne double pas les données.
+        copy_referentiels()
+        load_referentiels(ch)
 
-    # Les référentiels (services, CIM-10) sont déposés une seule fois par le CHU.
-    # copy_referentiels copie vers le lake, load_referentiels insère dans Bronze.
-    # Les deux opérations sont idempotentes : rejouer ne double pas les données.
-    copy_referentiels()
-    load_referentiels(ch)
+        dates = _discover_source_dates()
+        log.info(f"Dates source : {dates}")
 
-    dates = _discover_source_dates()
-    log.info(f"Dates source : {dates}")
+        new_dates = []
+        for date_str in dates:
+            # Step 0 : pseudonymisation + copie vers le lake.
+            # Idempotent : si les fichiers lake existent déjà, rien n'est refait.
+            counts = copy_date_to_lake(date_str)
+            if any(v > 0 for v in counts.values()):
+                log.info(f"Lake {date_str} : {counts}")
 
-    new_dates = []
-    for date_str in dates:
-        # Step 0 : pseudonymisation + copie vers le lake.
-        # Idempotent : si les fichiers lake existent déjà, rien n'est refait.
-        counts = copy_date_to_lake(date_str)
-        if any(v > 0 for v in counts.values()):
-            log.info(f"Lake {date_str} : {counts}")
+            # Step 1 : chargement Bronze.
+            # Vérifie meta.pipeline_runs → saute la date si déjà en 'success'.
+            loaded = load_bronze(ch, date_str)
+            if loaded:
+                new_dates.append(date_str)
 
-        # Step 1 : chargement Bronze.
-        # Vérifie meta.pipeline_runs → saute la date si déjà en 'success'.
-        loaded = load_bronze(ch, date_str)
-        if loaded:
-            new_dates.append(date_str)
+        if new_dates:
+            log.info(f"Nouvelles dates chargées en Bronze : {new_dates}")
+        else:
+            log.info("Aucune nouvelle date en Bronze.")
 
-    if new_dates:
-        log.info(f"Nouvelles dates chargées en Bronze : {new_dates}")
-    else:
-        log.info("Aucune nouvelle date en Bronze.")
-
-    # Silver / Gold / grants : reconstruction totale à chaque run.
-    # Bronze seul est incrémental (meta.pipeline_runs).
-    build_silver(ch)
-    build_gold(ch)
-    build_grants(ch)
+        # Silver / Gold / grants : reconstruction totale à chaque run.
+        # Bronze seul est incrémental (meta.pipeline_runs).
+        build_silver(ch)
+        build_gold(ch)
+        build_grants(ch)
+    finally:
+        try:
+            ch.close()
+        except Exception:
+            log.warning("Fermeture du client ClickHouse : ignorée", exc_info=True)
 
     log.info("=" * 60)
     log.info("Pipeline EDS-CHU — terminé avec succès")
@@ -139,6 +183,9 @@ def run() -> None:
 if __name__ == "__main__":
     try:
         run()
-    except Exception as e:
-        log.error(f"Erreur pipeline : {e}")
+    except PipelineError as exc:
+        log.error("%s", exc)
+        sys.exit(1)
+    except Exception:
+        log.exception("Erreur inattendue du pipeline")
         sys.exit(1)

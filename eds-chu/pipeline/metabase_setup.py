@@ -52,20 +52,30 @@ class Metabase:
 
     def __init__(self, url: str, email: str, password: str):
         self.url = url
-        r = requests.post(
-            f"{url}/api/session",
-            json={"username": email, "password": password},
-            timeout=30,
-        )
+        try:
+            r = requests.post(
+                f"{url}/api/session",
+                json={"username": email, "password": password},
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            raise ConnectionError(
+                f"Metabase injoignable ({url}) : {exc}"
+            ) from exc
         if r.status_code != 200:
-            raise SystemExit(
+            raise RuntimeError(
                 f"Connexion Metabase refusée ({r.status_code}) : {r.text}\n"
                 "Vérifier METABASE_ADMIN_EMAIL / METABASE_ADMIN_PASSWORD dans .env"
             )
         self.headers = {"X-Metabase-Session": r.json()["id"]}
 
     def get(self, path: str):
-        r = requests.get(f"{self.url}/api{path}", headers=self.headers, timeout=30)
+        try:
+            r = requests.get(
+                f"{self.url}/api{path}", headers=self.headers, timeout=30
+            )
+        except requests.RequestException as exc:
+            raise ConnectionError(f"GET {path} : Metabase injoignable — {exc}") from exc
         r.raise_for_status()
         return r.json()
 
@@ -422,7 +432,7 @@ def build_dashboard(mb: Metabase, db_id: int, coll_name: str,
 
 def run() -> None:
     if not MB_EMAIL or not MB_PASSWORD:
-        raise SystemExit(
+        raise RuntimeError(
             "METABASE_ADMIN_EMAIL et METABASE_ADMIN_PASSWORD doivent être "
             "renseignés dans eds-chu/.env (compte admin créé au premier "
             "lancement de Metabase)."
@@ -494,6 +504,6 @@ if __name__ == "__main__":
     )
     try:
         run()
-    except Exception as e:
-        log.error(f"Erreur configuration Metabase : {e}")
+    except Exception:
+        log.exception("Erreur configuration Metabase")
         sys.exit(1)

@@ -30,6 +30,8 @@ chargement Bronze, exécution des fichiers SQL).
 Silver et Gold sont toujours reconstruits : ils ne sont pas incrémentaux, contrairement au Bronze
 Un bug corrigé en Silver se répercute au run suivant, et le silver utilise toujours la dernière version du Bronze.
 
+Un crash ne perd pas la source (lecture seule) et ne duplique pas Bronze au retry. Lake : écriture `.tmp` puis `os.replace` — un fichier tronqué n'est jamais pris pour « déjà fait ». Bronze : avant chaque tentative, `DELETE` de la `_source_date` (`mutations_sync=2`) ; `success` n'est écrit dans `meta.pipeline_runs` qu'après les cinq tables. Un échec à mi-date (patients OK, monitoring KO) se rejoue en entier. MergeTree ne déduplique pas : sans ce DELETE, le retry doublerait les lignes. Silver / Gold : `CREATE OR REPLACE` table par table / vue par vue — atomique par objet, pas pour la couche entière. Un plantage au milieu peut laisser deux générations cohabiter jusqu'au run suivant, qui reconstruit tout. Les référentiels Bronze (`TRUNCATE` puis `INSERT`) sont brièvement vides ; en production on basculerait par `EXCHANGE TABLES`.
+
 Les dates source ne sont pas toutes présentes dans `patients/` (photo cumulative sur les 3 derniers jours seulement). Le pipeline fait l'union des dates de toutes les tables ; un fichier manquant pour une date est ignoré, pas une erreur.
 
 Le job n'est pas lancé à la main. Un cron dans le conteneur `pipeline` (toutes les min pour l'exemple, fuseau Paris) rejoue `python -m pipeline.run` ; un run a aussi lieu au démarrage de la stack. Bronze reste incrémental : une date déjà en `success` n'est pas rechargée. Sans ça, les dashboards resteraient figés dès qu'un dépôt source arrive un week-end.
@@ -49,13 +51,15 @@ Le même sel est appliqué aux patients et aux séjours : les jointures restent 
 
 Diagnostics, monitoring et référentiels n'ont pas de PII directe : copie brute. Le `stay_id` n'identifie un patient qu'en passant par la table séjours déjà pseudonymisée.
 
+Idempotence fichier : déjà présent dans le lake → skip. Un crash pendant la copie laisse un `.tmp`, pas un CSV à moitié écrit que le run suivant prendrait pour bon.
+
 ---
 
 ## 3. Bronze
 
 Bronze n'écarte rien. Les séjours incohérents (`discharge_ts` ≤ `admission_ts`) et les relevés capteur aberrants restent lisibles pour l'audit. Filtrer ici ferait disparaître la preuve de l'anomalie.
 
-Chaque ligne porte `_source_date`. `meta.pipeline_runs` enregistre succès / erreur par date : c'est le journal RGPD du chargement et le mécanisme d'incrément.
+Chaque ligne porte `_source_date`. `meta.pipeline_runs` enregistre succès / erreur par date : c'est le journal RGPD du chargement et le mécanisme d'incrément. `success` → skip ; `error` → DELETE de la date puis rechargement. Un `COUNT()` sur la table ne distinguerait pas un chargement complet d'un crash à mi-chemin.
 
 Sur le jeu actuel (activité du 1er au 28 août 2026, photos patients les
 26–28 août) :

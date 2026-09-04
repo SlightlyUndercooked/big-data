@@ -114,6 +114,8 @@ def _load_patients(ch, date_str: str) -> int:
                 src_date,
             ])
 
+    if not rows:
+        return 0
     ch.insert(
         "bronze.patients",
         rows,
@@ -148,6 +150,8 @@ def _load_sejours(ch, date_str: str) -> int:
                 src_date,
             ])
 
+    if not rows:
+        return 0
     ch.insert(
         "bronze.sejours",
         rows,
@@ -181,6 +185,8 @@ def _load_diagnostics(ch, date_str: str) -> int:
                 src_date,
             ])
 
+    if not rows:
+        return 0
     ch.insert(
         "bronze.diagnostics",
         rows,
@@ -196,6 +202,8 @@ def _load_monitoring(ch, date_str: str) -> int:
     src_date = date.fromisoformat(date_str)
 
     table = pq.read_table(lake_file)
+    if table.num_rows == 0:
+        return 0
     src_date_col = pa.array([src_date] * table.num_rows, type=pa.date32())
     table = table.append_column("_source_date", src_date_col)
     ch.insert_arrow("bronze.monitoring", table)
@@ -210,6 +218,8 @@ def _load_actes(ch, date_str: str) -> int:
     src_date = date.fromisoformat(date_str)
 
     table = pq.read_table(lake_file)
+    if table.num_rows == 0:
+        return 0
     src_date_col = pa.array([src_date] * table.num_rows, type=pa.date32())
     table = table.append_column("_source_date", src_date_col)
     ch.insert_arrow("bronze.actes", table)
@@ -234,7 +244,12 @@ def _load_referentiels(ch) -> None:
         rows = []
         with open(path, newline="") as f:
             for row in csv.DictReader(f):
-                rows.append([cast.get(c, str)(row[c]) for c in columns])
+                try:
+                    rows.append([cast.get(c, str)(row[c]) for c in columns])
+                except (KeyError, ValueError, TypeError) as exc:
+                    raise ValueError(
+                        f"{filename} : ligne illisible ({exc})"
+                    ) from exc
         return rows
 
     for table, filename, columns, cast in (
@@ -285,8 +300,16 @@ def load_bronze(ch, date_str: str) -> bool:
         return True
 
     except Exception as exc:
-        _record_run(ch, date_str, "error", total_rows, str(exc))
-        log.error(f"Bronze {date_str} : erreur — {exc}")
+        try:
+            _record_run(ch, date_str, "error", total_rows, str(exc))
+        except Exception as rec_exc:
+            log.error(
+                "Impossible d'enregistrer l'échec Bronze %s dans "
+                "meta.pipeline_runs : %s",
+                date_str,
+                rec_exc,
+            )
+        log.exception("Bronze %s : erreur", date_str)
         raise
 
 
@@ -316,6 +339,13 @@ def load_referentiels(ch) -> None:
         _load_referentiels(ch)
         _record_run(ch, "referentiels", "success", 0)
     except Exception as exc:
-        _record_run(ch, "referentiels", "error", 0, str(exc))
-        log.error(f"Référentiels : erreur — {exc}")
+        try:
+            _record_run(ch, "referentiels", "error", 0, str(exc))
+        except Exception as rec_exc:
+            log.error(
+                "Impossible d'enregistrer l'échec référentiels dans "
+                "meta.pipeline_runs : %s",
+                rec_exc,
+            )
+        log.exception("Référentiels : erreur")
         raise

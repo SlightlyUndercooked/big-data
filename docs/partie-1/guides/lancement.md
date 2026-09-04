@@ -144,7 +144,14 @@ docker compose logs pipeline
 docker compose exec pipeline python -m pipeline.run
 ```
 
-Les dates déjà chargées en Bronze sont ignorées, Silver et Gold sont reconstruits.
+Ce que le retry garantit :
+
+- **Source** : intacte (lecture seule)
+- **Lake** : fichier déjà copié → skip ; un `.tmp` n'est pas pris pour un fichier fini
+- **Bronze** : dates en `success` ignorées ; la date en `error` est d'abord vidée (`DELETE` sur `_source_date`) puis rechargée — pas de doublons
+- **Silver / Gold** : reconstruits en entier depuis Bronze
+
+Les dashboards peuvent rester ceux du run précédent jusqu'à ce que Silver et Gold se terminent. Ce n'est pas une corruption, c'est un retard d'un run.
 
 **Repartir de zéro (reset complet) :**
 ```bash

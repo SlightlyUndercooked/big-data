@@ -14,7 +14,14 @@ import os, sys, time
 import clickhouse_connect
 
 host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
-port = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+try:
+    port = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+except ValueError:
+    print(
+        f"CLICKHOUSE_PORT invalide : {os.environ.get('CLICKHOUSE_PORT')!r}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 user = os.environ.get("CLICKHOUSE_USER", "default")
 password = os.environ.get("CLICKHOUSE_PASSWORD", "")
 
@@ -34,7 +41,14 @@ sys.exit(1)
 PY
 
 if [ "${RUN_ON_START:-1}" = "1" ]; then
-    python -m pipeline.run
+    if ! python -m pipeline.run; then
+        echo "Run de démarrage en échec, le cron reprendra au prochain tick." >&2
+    fi
+fi
+
+if ! /usr/local/bin/supercronic -test /tmp/eds-crontab >/dev/null; then
+    echo "CRON_SCHEDULE invalide : ${SCHEDULE}" >&2
+    exit 1
 fi
 
 exec /usr/local/bin/supercronic /tmp/eds-crontab
