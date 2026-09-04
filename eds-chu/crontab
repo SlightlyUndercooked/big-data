@@ -1,0 +1,4 @@
+# Planification du pipeline EDS-CHU (référence ; le conteneur lit CRON_SCHEDULE).
+# Toutes les 5 minutes Europe/Paris.
+PATH=/usr/local/bin:/usr/bin:/bin
+*/5 * * * * /usr/local/bin/python -m pipeline.run

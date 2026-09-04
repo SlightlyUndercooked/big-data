@@ -32,6 +32,8 @@ Un bug corrigé en Silver se répercute au run suivant, et le silver utilise tou
 
 Les dates source ne sont pas toutes présentes dans `patients/` (photo cumulative sur les 3 derniers jours seulement). Le pipeline fait l'union des dates de toutes les tables ; un fichier manquant pour une date est ignoré, pas une erreur.
 
+Le job n'est pas lancé à la main. Un cron dans le conteneur `pipeline` (toutes les min pour l'exemple, fuseau Paris) rejoue `python -m pipeline.run` ; un run a aussi lieu au démarrage de la stack. Bronze reste incrémental : une date déjà en `success` n'est pas rechargée. Sans ça, les dashboards resteraient figés dès qu'un dépôt source arrive un week-end.
+
 ---
 
 ## 2. Lake
@@ -370,4 +372,4 @@ Deux niveaux indépendants :
    « no self-service » + collection `none`. Le niveau 1 reste la vraie
    serrure.
 
-Les dashboards et droits applicatifs sont recréés par `python -m pipeline.metabase_setup` (idempotent). Procédure détaillée dans [`guides/metabase.md`](guides/metabase.md).
+Les dashboards et droits applicatifs sont recréés par `docker compose exec pipeline python -m pipeline.metabase_setup` (idempotent). Procédure détaillée dans [`guides/metabase.md`](guides/metabase.md).

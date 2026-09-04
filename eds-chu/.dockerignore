@@ -1,0 +1,9 @@
+lake/
+source-filestorage/
+source-filestorage-corrigé/
+metabase-plugins/
+__pycache__/
+*.pyc
+.env
+.git
+logs/
