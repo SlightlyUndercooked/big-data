@@ -32,7 +32,13 @@ LAKE_DIR   = _resolve("LAKE_DIR")
 SQL_DIR    = _ENV_DIR / "sql"
 
 CLICKHOUSE_HOST     = os.environ.get("CLICKHOUSE_HOST", "localhost")
-CLICKHOUSE_PORT     = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+try:
+    CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", "8123"))
+except ValueError as exc:
+    raise EnvironmentError(
+        f"CLICKHOUSE_PORT doit être un entier, pas "
+        f"{os.environ.get('CLICKHOUSE_PORT')!r}"
+    ) from exc
 CLICKHOUSE_USER     = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 
@@ -46,12 +52,25 @@ def exec_sql_file(ch, filename: str) -> None:
 
     Les commentaires `--` sont retirés avant le split sur ';' : un
     point-virgule dans un commentaire ne doit pas couper l'instruction.
+    En cas d'échec, le nom du fichier et un extrait de l'instruction
+    fautive sont joints à l'exception (sinon ClickHouse ne dit pas
+    *quelle* vue / table a cassé le run).
     """
-    sql = (SQL_DIR / filename).read_text()
+    path = SQL_DIR / filename
+    if not path.is_file():
+        raise FileNotFoundError(f"Fichier SQL introuvable : {path}")
+
+    sql = path.read_text()
     no_comments = "\n".join(
         l for l in sql.splitlines() if not l.strip().startswith("--")
     )
-    for stmt in no_comments.split(";"):
-        clean = stmt.strip()
-        if clean:
+    statements = [s.strip() for s in no_comments.split(";") if s.strip()]
+    for i, clean in enumerate(statements, start=1):
+        try:
             ch.command(clean)
+        except Exception as exc:
+            preview = " ".join(clean.split())[:200]
+            raise RuntimeError(
+                f"Échec SQL dans {filename} (instruction {i}/{len(statements)}) : {exc}\n"
+                f"  {preview}"
+            ) from exc

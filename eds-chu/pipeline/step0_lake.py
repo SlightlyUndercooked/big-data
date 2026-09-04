@@ -19,6 +19,7 @@ import hmac
 import json
 import os
 import shutil
+from contextlib import contextmanager
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -30,11 +31,27 @@ def _tmp_path(dst: Path) -> Path:
     return dst.with_name(dst.name + ".tmp")
 
 
+@contextmanager
+def _atomic_dst(dst: Path):
+    """Écrit dans dst.tmp, remplace dst à la sortie, supprime le tmp si ça casse.
+
+    Un crash ne laisse donc ni fichier lake tronqué (pris pour « déjà fait »)
+    ni .tmp orphelin qui polluerait le disque.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _tmp_path(dst)
+    try:
+        yield tmp
+        os.replace(tmp, dst)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _atomic_copy(src: Path, dst: Path) -> None:
     """Copie src → dst de manière atomique via .tmp + os.replace."""
-    tmp = _tmp_path(dst)
-    shutil.copy2(src, tmp)
-    os.replace(tmp, dst)
+    with _atomic_dst(dst) as tmp:
+        shutil.copy2(src, tmp)
 
 
 def _pseudonymize(patient_id: str) -> str:
@@ -62,27 +79,32 @@ def _copy_patients(date_str: str) -> int:
     if dst.exists():
         return 0
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _tmp_path(dst)
     count = 0
-
-    with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
-        reader = csv.DictReader(fin)
-        writer = csv.DictWriter(
-            fout,
-            fieldnames=["patient_pseudo", "birth_year", "sex", "region_code"],
-        )
-        writer.writeheader()
-        for row in reader:
-            writer.writerow({
-                "patient_pseudo": _pseudonymize(row["patient_id"]),
-                "birth_year":     int(row["birth_date"][:4]),
-                "sex":            _normalize_sex(row["sex"]),
-                "region_code":    row["region_code"].strip(),
-            })
-            count += 1
-
-    os.replace(tmp, dst)
+    try:
+        with _atomic_dst(dst) as tmp:
+            with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
+                reader = csv.DictReader(fin)
+                writer = csv.DictWriter(
+                    fout,
+                    fieldnames=["patient_pseudo", "birth_year", "sex", "region_code"],
+                )
+                writer.writeheader()
+                for row in reader:
+                    writer.writerow({
+                        "patient_pseudo": _pseudonymize(row["patient_id"]),
+                        "birth_year":     int(row["birth_date"][:4]),
+                        "sex":            _normalize_sex(row["sex"]),
+                        "region_code":    row["region_code"].strip(),
+                    })
+                    count += 1
+    except KeyError as exc:
+        raise ValueError(
+            f"patients.csv ({date_str}) : colonne manquante {exc}"
+        ) from exc
+    except (ValueError, csv.Error, OSError) as exc:
+        raise ValueError(
+            f"patients.csv ({date_str}) : fichier illisible — {exc}"
+        ) from exc
     return count
 
 
@@ -92,34 +114,39 @@ def _copy_sejours(date_str: str) -> int:
     if not src.exists() or dst.exists():
         return 0
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _tmp_path(dst)
     count = 0
-
-    with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
-        reader = csv.DictReader(fin)
-        writer = csv.DictWriter(
-            fout,
-            fieldnames=[
-                "stay_id", "patient_pseudo", "service_code",
-                "admission_ts", "discharge_ts",
-                "admission_mode", "discharge_mode",
-            ],
-        )
-        writer.writeheader()
-        for row in reader:
-            writer.writerow({
-                "stay_id":        row["stay_id"],
-                "patient_pseudo": _pseudonymize(row["patient_id"]),
-                "service_code":   row["service_code"],
-                "admission_ts":   row["admission_ts"],
-                "discharge_ts":   row["discharge_ts"],
-                "admission_mode": row["admission_mode"],
-                "discharge_mode": row["discharge_mode"],
-            })
-            count += 1
-
-    os.replace(tmp, dst)
+    try:
+        with _atomic_dst(dst) as tmp:
+            with open(src, newline="") as fin, open(tmp, "w", newline="") as fout:
+                reader = csv.DictReader(fin)
+                writer = csv.DictWriter(
+                    fout,
+                    fieldnames=[
+                        "stay_id", "patient_pseudo", "service_code",
+                        "admission_ts", "discharge_ts",
+                        "admission_mode", "discharge_mode",
+                    ],
+                )
+                writer.writeheader()
+                for row in reader:
+                    writer.writerow({
+                        "stay_id":        row["stay_id"],
+                        "patient_pseudo": _pseudonymize(row["patient_id"]),
+                        "service_code":   row["service_code"],
+                        "admission_ts":   row["admission_ts"],
+                        "discharge_ts":   row["discharge_ts"],
+                        "admission_mode": row["admission_mode"],
+                        "discharge_mode": row["discharge_mode"],
+                    })
+                    count += 1
+    except KeyError as exc:
+        raise ValueError(
+            f"sejours.csv ({date_str}) : colonne manquante {exc}"
+        ) from exc
+    except (ValueError, csv.Error, OSError) as exc:
+        raise ValueError(
+            f"sejours.csv ({date_str}) : fichier illisible — {exc}"
+        ) from exc
     return count
 
 
@@ -129,11 +156,16 @@ def _copy_diagnostics(date_str: str) -> int:
     if not src.exists() or dst.exists():
         return 0
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_copy(src, dst)
-
-    with open(dst) as f:
-        return len(json.load(f))
+    try:
+        with _atomic_dst(dst) as tmp:
+            shutil.copy2(src, tmp)
+            with open(tmp) as f:
+                n = len(json.load(f))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(
+            f"diagnostics.json ({date_str}) : fichier illisible — {exc}"
+        ) from exc
+    return n
 
 
 def _copy_monitoring(date_str: str) -> int:
@@ -142,11 +174,15 @@ def _copy_monitoring(date_str: str) -> int:
     if not src.exists() or dst.exists():
         return 0
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_copy(src, dst)
-
-    t = pq.read_table(dst)
-    return t.num_rows
+    try:
+        with _atomic_dst(dst) as tmp:
+            shutil.copy2(src, tmp)
+            n = pq.read_table(tmp).num_rows
+    except Exception as exc:
+        raise ValueError(
+            f"monitoring.parquet ({date_str}) : fichier illisible — {exc}"
+        ) from exc
+    return n
 
 
 def _copy_actes(date_str: str) -> int:
@@ -155,12 +191,15 @@ def _copy_actes(date_str: str) -> int:
     if not src.exists() or dst.exists():
         return 0
 
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    # Copie brute : pas de PII (stay_id + code d'acte + horodatage).
-    _atomic_copy(src, dst)
-
-    t = pq.read_table(dst)
-    return t.num_rows
+    try:
+        with _atomic_dst(dst) as tmp:
+            shutil.copy2(src, tmp)
+            n = pq.read_table(tmp).num_rows
+    except Exception as exc:
+        raise ValueError(
+            f"actes.parquet ({date_str}) : fichier illisible — {exc}"
+        ) from exc
+    return n
 
 
 def copy_referentiels() -> None:
